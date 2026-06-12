@@ -981,27 +981,49 @@ function spawnShockwave(x, y) {
   });
   startFxLoop();
 }
-function spawnLaserSweep() {
-  const theme = currentTheme();
-  const windowEl = document.querySelector(".reel-window");
-  if (!windowEl) return;
-  const rect = windowEl.getBoundingClientRect();
-  const canvasRect = els.canvas.getBoundingClientRect();
+
+function pushParticle(particle) {
+  fx.particles.push(particle);
+}
+
+function trimParticles(cap = window.innerWidth < 768 ? 150 : 520) {
+  if (fx.particles.length > cap) {
+    fx.particles.splice(0, fx.particles.length - cap);
+  }
+}
+
+function spawnTreasureRain(tier = "small") {
   const isMobile = window.innerWidth < 768;
-  const duration = isMobile ? 22 : 32;
-  fx.particles.push({
-    shape: "laser",
-    x: rect.left - canvasRect.left,
-    y: rect.top - canvasRect.top,
-    vx: 0,
-    vy: rect.height / duration,
-    life: duration,
-    maxLife: duration,
-    size: 0,
-    color: theme.accent,
-    gravity: 0,
-    spin: 0
-  });
+  const theme = currentTheme();
+  const config = {
+    small: { amount: isMobile ? 26 : 70, cap: isMobile ? 130 : 380, speed: 1 },
+    big: { amount: isMobile ? 70 : 210, cap: isMobile ? 180 : 560, speed: 1.25 },
+    mega: { amount: isMobile ? 120 : 360, cap: isMobile ? 240 : 760, speed: 1.55 },
+  }[tier] || { amount: 70, cap: 420, speed: 1 };
+  const shapes = tier === "small"
+    ? ["coin", "coin", "diamond", "spark"]
+    : ["coin", "coin", "diamond", "goldbar", "bill", "spark"];
+  const palette = ["#fff4a8", "#ffd45a", "#ff981f", "#ffffff", theme.accent, theme.second || theme.accent];
+
+  for (let i = 0; i < config.amount; i += 1) {
+    const shape = shapes[Math.floor(Math.random() * shapes.length)];
+    const fromTop = Math.random() > 0.22;
+    pushParticle({
+      x: fromTop ? Math.random() * fx.width : fx.width * (0.24 + Math.random() * 0.52),
+      y: fromTop ? -30 - Math.random() * fx.height * 0.28 : fx.height * (0.22 + Math.random() * 0.25),
+      vx: (Math.random() - 0.5) * (fromTop ? 3.8 : 13) * config.speed,
+      vy: fromTop ? (3.2 + Math.random() * 7.4) * config.speed : (-6 - Math.random() * 8) * config.speed,
+      life: (isMobile ? 46 : 86) + Math.random() * (tier === "mega" ? 95 : 60),
+      maxLife: isMobile ? 92 : 150,
+      size: (isMobile ? 4 : 6) + Math.random() * (shape === "bill" ? 8 : 10),
+      color: palette[Math.floor(Math.random() * palette.length)],
+      shape,
+      gravity: shape === "bill" ? 0.07 : 0.14,
+      spin: Math.random() * Math.PI * 2,
+      wobble: Math.random() * Math.PI * 2,
+    });
+  }
+  trimParticles(config.cap);
   startFxLoop();
 }
 
@@ -1111,47 +1133,7 @@ function fxLoop() {
   
   for (let i = fx.particles.length - 1; i >= 0; i -= 1) {
     const p = fx.particles[i];
-    
-    // 0. Laser sweep update & rendering
-    if (p.shape === "laser") {
-      p.life -= 1;
-      p.y += p.vy;
-      if (p.life <= 0) {
-        fx.particles.splice(i, 1);
-        continue;
-      }
-      
-      const alpha = Math.max(0, p.life / p.maxLife);
-      fx.ctx.save();
-      const windowEl = document.querySelector(".reel-window");
-      const rect = windowEl ? windowEl.getBoundingClientRect() : { left: canvasRect.left, right: canvasRect.right };
-      const x1 = rect.left - canvasRect.left;
-      const x2 = rect.right - canvasRect.left;
-      
-      if (!isMobile) {
-        fx.ctx.shadowColor = p.color;
-        fx.ctx.shadowBlur = 18;
-      }
-      
-      const gradHeight = isMobile ? 10 : 20;
-      const grad = fx.ctx.createLinearGradient(0, p.y - gradHeight, 0, p.y + gradHeight);
-      grad.addColorStop(0, "rgba(255,255,255,0)");
-      grad.addColorStop(0.5, p.color);
-      grad.addColorStop(1, "rgba(255,255,255,0)");
-      
-      fx.ctx.fillStyle = grad;
-      fx.ctx.globalAlpha = alpha * 0.75;
-      fx.ctx.fillRect(x1, p.y - gradHeight, x2 - x1, gradHeight * 2);
-      
-      fx.ctx.fillStyle = "#ffffff";
-      fx.ctx.globalAlpha = alpha * 0.95;
-      fx.ctx.shadowBlur = 0;
-      fx.ctx.fillRect(x1, p.y - 1.5, x2 - x1, 3);
-      
-      fx.ctx.restore();
-      continue;
-    }
-    
+
     // 1. Shockwave update & rendering
     if (p.shape === "shockwave") {
       p.life -= 1;
@@ -1243,7 +1225,8 @@ function fxLoop() {
     p.vy += p.gravity;
     p.x += p.vx;
     p.y += p.vy;
-    p.spin += 0.2;
+    p.spin += p.shape === "bill" ? 0.05 : 0.2;
+    p.wobble = (p.wobble || 0) + 0.08;
     const alpha = Math.max(0, p.life / p.maxLife);
     fx.ctx.save();
     fx.ctx.globalAlpha = alpha;
@@ -1257,6 +1240,41 @@ function fxLoop() {
     if (p.shape === "coin") {
       fx.ctx.beginPath();
       fx.ctx.ellipse(0, 0, p.size * 1.3, p.size * 0.75, 0, 0, Math.PI * 2);
+      fx.ctx.fill();
+      fx.ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+      fx.ctx.lineWidth = Math.max(1, p.size * 0.12);
+      fx.ctx.stroke();
+    } else if (p.shape === "diamond") {
+      fx.ctx.beginPath();
+      fx.ctx.moveTo(0, -p.size * 1.1);
+      fx.ctx.lineTo(p.size * 1.15, 0);
+      fx.ctx.lineTo(0, p.size * 1.1);
+      fx.ctx.lineTo(-p.size * 1.15, 0);
+      fx.ctx.closePath();
+      fx.ctx.fill();
+      fx.ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+      fx.ctx.lineWidth = Math.max(1, p.size * 0.1);
+      fx.ctx.stroke();
+    } else if (p.shape === "goldbar") {
+      const w = p.size * 2.3;
+      const h = p.size * 1.05;
+      fx.ctx.beginPath();
+      fx.ctx.roundRect(-w / 2, -h / 2, w, h, Math.max(2, p.size * 0.2));
+      fx.ctx.fill();
+      fx.ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+      fx.ctx.fillRect(-w * 0.32, -h * 0.33, w * 0.64, h * 0.18);
+    } else if (p.shape === "bill") {
+      const w = p.size * 2.7;
+      const h = p.size * 1.2;
+      fx.ctx.translate(Math.sin(p.wobble) * 3, 0);
+      fx.ctx.fillStyle = "#72ff9c";
+      fx.ctx.fillRect(-w / 2, -h / 2, w, h);
+      fx.ctx.strokeStyle = "rgba(255, 255, 255, 0.65)";
+      fx.ctx.lineWidth = 1;
+      fx.ctx.strokeRect(-w / 2, -h / 2, w, h);
+      fx.ctx.fillStyle = "rgba(0, 75, 28, 0.55)";
+      fx.ctx.beginPath();
+      fx.ctx.arc(0, 0, h * 0.28, 0, Math.PI * 2);
       fx.ctx.fill();
     } else {
       fx.ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
@@ -1302,6 +1320,7 @@ function pulseWin(result, spend) {
     setTimeout(() => els.machine.classList.remove("is-mega-hit", "is-small-hit"), mega ? 1600 : 900);
     spawnBurst(theme.effect, mega ? 260 : 130);
     spawnCoinShower(mega);
+    spawnTreasureRain(mega ? "mega" : result.total >= currentBet() * currentLineCount() * 12 ? "big" : "small");
     showWinSplash(result.total, mega);
     playWinSound(mega);
     toast(mega ? "爆炸大奖！" : "中奖！", `${result.wins.length} 条高光 · 净收益 ${format.format(net)}`);
@@ -1315,6 +1334,7 @@ function pulseWin(result, spend) {
     toast("免费旋转触发", `获得 ${result.freeSpinsWon} 次免费局`);
     playFreeSpinSound();
     spawnBurst("blizzard", 180);
+    spawnTreasureRain("big");
   }
 }
 
@@ -1451,7 +1471,6 @@ async function spin() {
   playButtonSound();
   const btnRect = els.spinButton.getBoundingClientRect();
   spawnShockwave(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
-  spawnLaserSweep();
   const bet = currentBet();
   const lineCount = currentLineCount();
   const lineCost = bet * lineCount;
