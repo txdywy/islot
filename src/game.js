@@ -15,6 +15,8 @@ const state = {
   auto: false,
   autoTimer: 0,
   linePreviewTimer: 0,
+  themeReelStrips: {},
+  reelStopIndices: [0, 0, 0, 0, 0],
 };
 
 const audio = {
@@ -211,12 +213,38 @@ function weightedSymbol(theme) {
   return theme.symbols.at(-1);
 }
 
-function randomBoard(theme) {
-  return Array.from({ length: 5 }, () => Array.from({ length: 3 }, () => weightedSymbol(theme)));
+function generateThemeReelStrips(theme) {
+  const strips = [];
+  for (let col = 0; col < 5; col += 1) {
+    const strip = [];
+    theme.symbols.forEach((sym) => {
+      const count = Math.max(1, Math.round(sym.weight * 1.5));
+      for (let k = 0; k < count; k += 1) {
+        strip.push(sym);
+      }
+    });
+    for (let i = strip.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [strip[i], strip[j]] = [strip[j], strip[i]];
+    }
+    strips.push(strip);
+  }
+  return strips;
 }
 
-function spinStrip(theme, finalColumn) {
-  return [...Array.from({ length: 6 }, () => weightedSymbol(theme)), ...finalColumn];
+function randomBoard(theme) {
+  if (state.themeReelStrips && state.themeReelStrips[theme.id]) {
+    const strips = state.themeReelStrips[theme.id];
+    return state.reelStopIndices.map((stopIndex, colIndex) => {
+      const strip = strips[colIndex];
+      return [
+        strip[stopIndex % strip.length],
+        strip[(stopIndex + 1) % strip.length],
+        strip[(stopIndex + 2) % strip.length]
+      ];
+    });
+  }
+  return Array.from({ length: 5 }, () => Array.from({ length: 3 }, () => weightedSymbol(theme)));
 }
 
 function symbolMarkup(symbol, extraClass = "") {
@@ -243,14 +271,22 @@ function renderBoard(board, spinningColumns = []) {
     .join("");
 }
 
-function renderSpinStrips(finalBoard, theme) {
-  els.reels.innerHTML = finalBoard
-    .map((column, colIndex) => {
-      const strip = spinStrip(theme, column);
+function renderSpinStrips(theme, scrollCounts) {
+  const strips = state.themeReelStrips[theme.id];
+  els.reels.innerHTML = strips
+    .map((strip, colIndex) => {
+      const startIndex = state.reelStopIndices[colIndex];
+      const scrollCount = scrollCounts[colIndex];
+      const scrollSymbols = [];
+      for (let k = 0; k < scrollCount + 3; k += 1) {
+        const sym = strip[(startIndex + k) % strip.length];
+        const extraClass = (k >= scrollCount) ? "is-final" : "";
+        scrollSymbols.push({ sym, extraClass });
+      }
       return `
         <div class="reel is-rolling" style="--delay:${colIndex * 90}ms">
           <div class="reel-strip">
-            ${strip.map((symbol, index) => symbolMarkup(symbol, index >= strip.length - 3 ? "is-final" : "")).join("")}
+            ${scrollSymbols.map((item) => symbolMarkup(item.sym, item.extraClass)).join("")}
           </div>
         </div>
       `;
@@ -698,61 +734,44 @@ function playWinSound(mega = false) {
   }
 }
 
-async function animateReels(finalBoard, theme) {
-  renderSpinStrips(finalBoard, theme);
+async function animateReels(finalBoard, theme, scrollCounts, nextStopIndices) {
+  renderSpinStrips(theme, scrollCounts);
   const reels = [...els.reels.querySelectorAll(".reel")];
-  const { firstStopDelay, stopGap, stopDuration, loopDuration } = spinTiming();
-  const scatterCount = finalBoard.flat().filter((symbol) => symbol.id === "scatter").length;
   els.machine.classList.add("is-reel-spinning");
 
   await new Promise((resolve) => requestAnimationFrame(resolve));
   syncAllReelMetrics();
 
-  const loopAnimations = reels.map((reel) => {
-    const strip = reel.querySelector(".reel-strip");
+  const promises = reels.map((reel, index) => {
+    const stripEl = reel.querySelector(".reel-strip");
     const rowHeight = Number.parseFloat(reel.style.getPropertyValue("--reel-row-height")) || (reel.clientHeight / 3);
     const gap = Number.parseFloat(reel.style.getPropertyValue("--reel-row-gap")) || 0;
-    const cycleDistance = (rowHeight + gap) * 3;
-    strip.style.transform = "translate3d(0, 0, 0)";
+    const scrollCount = scrollCounts[index];
+    const scrollDistance = scrollCount * (rowHeight + gap);
+
+    let duration = state.turbo ? (320 + index * 100) : (1200 + index * 360);
+    const scattersBefore = finalBoard.slice(0, index).flat().filter((symbol) => symbol.id === "scatter").length;
+    const isAnt = index >= 3 && scattersBefore >= 2 && !state.turbo;
+    if (isAnt) {
+      duration += 1600;
+      reel.classList.add("is-anticipating");
+    }
+
     reel.classList.add("is-speeding");
-    return strip.animate(
+    const animation = stripEl.animate(
       [
         { transform: "translate3d(0, 0, 0)" },
-        { transform: `translate3d(0, -${cycleDistance}px, 0)` },
+        { transform: `translate3d(0, -${scrollDistance}px, 0)` }
       ],
       {
-        duration: loopDuration,
-        easing: "linear",
-        iterations: Infinity,
-      },
+        duration: duration,
+        easing: "cubic-bezier(0.25, -0.15, 0.1, 1.12)",
+        fill: "forwards"
+      }
     );
-  });
 
-  const stopReel = (reel, index) =>
-    new Promise((resolve) => {
-      const strip = reel.querySelector(".reel-strip");
-      const rowHeight = Number.parseFloat(reel.style.getPropertyValue("--reel-row-height")) || (reel.clientHeight / 3);
-      const gap = Number.parseFloat(reel.style.getPropertyValue("--reel-row-gap")) || 0;
-      const cycleDistance = (rowHeight + gap) * 3;
-      loopAnimations[index]?.cancel();
-      strip.innerHTML = [
-        ...finalBoard[index].map((symbol) => symbolMarkup(symbol, "is-final")),
-        ...Array.from({ length: 3 }, () => symbolMarkup(weightedSymbol(theme))),
-      ].join("");
-      strip.style.transform = `translate3d(0, -${cycleDistance}px, 0)`;
-      const landing = strip.animate(
-        [
-          { transform: `translate3d(0, -${cycleDistance}px, 0)` },
-          { transform: "translate3d(0, 18px, 0)", offset: 0.82 },
-          { transform: "translate3d(0, 0, 0)" },
-        ],
-        {
-          duration: stopDuration,
-          easing: reelStopEase,
-          fill: "forwards",
-        },
-      );
-      landing.finished.then(() => {
+    return new Promise((resolve) => {
+      animation.finished.then(() => {
         reel.classList.remove("is-speeding");
         reel.classList.remove("is-anticipating");
         reel.classList.add("is-stopped");
@@ -761,18 +780,10 @@ async function animateReels(finalBoard, theme) {
         resolve();
       });
     });
+  });
 
-  for (const [index, reel] of reels.entries()) {
-    let waitTime = index === 0 ? firstStopDelay : stopGap;
-    if (scatterCount >= 2 && index >= 3 && !state.turbo) {
-      reel.classList.add("is-anticipating");
-      waitTime += 820;
-    }
-    await new Promise((resolve) => setTimeout(resolve, waitTime));
-    await stopReel(reel, index);
-  }
-
-  loopAnimations.forEach((animation) => animation.cancel());
+  await Promise.all(promises);
+  state.reelStopIndices = nextStopIndices;
   els.machine.classList.remove("is-reel-spinning");
 }
 
@@ -1452,9 +1463,30 @@ async function spin() {
   else state.balance -= lineCost;
   renderShell();
 
-  const board = randomBoard(theme);
+  const strips = state.themeReelStrips[theme.id];
+  const baseScroll = state.turbo ? 12 : 24;
+  const stepScroll = state.turbo ? 4 : 10;
+  const scrollCounts = Array.from({ length: 5 }, (_, col) => {
+    const randOffset = Math.floor(Math.random() * 6);
+    return baseScroll + col * stepScroll + randOffset;
+  });
+
+  const nextStopIndices = state.reelStopIndices.map((curr, col) => {
+    const stripLen = strips[col].length;
+    return (curr + scrollCounts[col]) % stripLen;
+  });
+
+  const board = nextStopIndices.map((stopIndex, colIndex) => {
+    const strip = strips[colIndex];
+    return [
+      strip[stopIndex % strip.length],
+      strip[(stopIndex + 1) % strip.length],
+      strip[(stopIndex + 2) % strip.length]
+    ];
+  });
+
   startSpinSound(spinTiming().totalDuration);
-  await animateReels(board, theme);
+  await animateReels(board, theme, scrollCounts, nextStopIndices);
   stopSpinSound();
   renderBoard(board, []);
   const result = evaluate(board, bet, lineCount);
@@ -1486,6 +1518,12 @@ function setTheme(themeId) {
   }
   playButtonSound();
   state.themeId = themeId;
+  if (state.themeReelStrips && state.themeReelStrips[themeId]) {
+    state.reelStopIndices = Array.from({ length: 5 }, (_, col) => {
+      const len = state.themeReelStrips[themeId][col].length;
+      return Math.floor(Math.random() * len);
+    });
+  }
   state.heat = Math.max(0, state.heat - 1);
   renderThemes();
   renderPaytable();
@@ -1575,7 +1613,19 @@ function bindEvents() {
   });
 }
 
+function initReelStrips() {
+  state.themeReelStrips = {};
+  THEMES.forEach((theme) => {
+    state.themeReelStrips[theme.id] = generateThemeReelStrips(theme);
+  });
+  state.reelStopIndices = Array.from({ length: 5 }, (_, col) => {
+    const len = state.themeReelStrips[state.themeId][col].length;
+    return Math.floor(Math.random() * len);
+  });
+}
+
 function init() {
+  initReelStrips();
   _doResize();
   renderThemes();
   renderPaytable();
