@@ -14,6 +14,7 @@ const state = {
   muted: false,
   auto: false,
   autoTimer: 0,
+  linePreviewTimer: 0,
 };
 
 const audio = {
@@ -148,6 +149,8 @@ function renderShell() {
     state.freeSpins > 0
       ? `${currentLineCount()} 条线 · 免费局`
       : `${currentLineCount()} 条线 · 总下注 ${format.format(currentTotalBet())}`;
+  els.lineDown.disabled = currentLineCount() <= 1;
+  els.lineUp.disabled = currentLineCount() >= PAYLINES.length;
   els.autoButton.classList.toggle("is-active", state.auto);
   els.turbo.classList.toggle("is-active", state.turbo);
   els.mute.classList.toggle("is-active", state.muted);
@@ -208,8 +211,7 @@ function randomBoard(theme) {
 }
 
 function spinStrip(theme, finalColumn) {
-  const stripLength = state.turbo ? 24 : 46;
-  return [...Array.from({ length: stripLength }, () => weightedSymbol(theme)), ...finalColumn];
+  return [...Array.from({ length: 6 }, () => weightedSymbol(theme)), ...finalColumn];
 }
 
 function symbolMarkup(symbol, extraClass = "") {
@@ -363,12 +365,15 @@ function noiseHit(duration = 0.12, volume = 0.2, cutoff = 1400, when = 0) {
 }
 
 function spinTiming() {
-  const baseDuration = state.turbo ? 920 : 1850;
-  const stopGap = state.turbo ? 165 : 430;
+  const firstStopDelay = state.turbo ? 420 : 850;
+  const stopGap = state.turbo ? 150 : 330;
+  const stopDuration = state.turbo ? 260 : 450;
   return {
-    baseDuration,
+    firstStopDelay,
     stopGap,
-    totalDuration: baseDuration + stopGap * (5 - 1),
+    stopDuration,
+    loopDuration: state.turbo ? 115 : 150,
+    totalDuration: firstStopDelay + stopDuration + (stopGap + stopDuration) * (5 - 1),
   };
 }
 
@@ -376,6 +381,8 @@ function startSpinSound(totalDuration = spinTiming().totalDuration) {
   const ctx = ensureAudio();
   if (!ctx || audio.spinOsc) return;
   const now = ctx.currentTime;
+  tone(220, 0.32, "sawtooth", 0.1);
+  tone(820, 0.18, "triangle", 0.055, 0.12);
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
@@ -438,7 +445,7 @@ function stopSpinSound() {
 }
 
 function scheduleSpinTicks(totalDuration) {
-  const step = state.turbo ? 0.064 : 0.074;
+  const step = state.turbo ? 0.058 : 0.08;
   const seconds = totalDuration / 1000;
   const count = Math.floor(seconds / step);
   for (let i = 0; i < count; i += 1) {
@@ -458,9 +465,10 @@ function playButtonSound() {
 }
 
 function playReelStop(index) {
-  tone(520 + index * 96, 0.05, "triangle", 0.15);
-  tone(1040 + index * 135, 0.045, "sine", 0.08, 0.018);
-  noiseHit(0.065, 0.12, 1700 + index * 280);
+  tone(128 - index * 7, 0.16, "sine", 0.22);
+  tone(540 + index * 72, 0.055, "triangle", 0.14, 0.018);
+  tone(1040 + index * 120, 0.045, "sine", 0.07, 0.04);
+  noiseHit(0.075, 0.14, 1600 + index * 260);
 }
 
 function playCoinCascade(count = 10, start = 0) {
@@ -491,46 +499,78 @@ function playWinSound(mega = false) {
 async function animateReels(finalBoard, theme) {
   renderSpinStrips(finalBoard, theme);
   const reels = [...els.reels.querySelectorAll(".reel")];
-  const { baseDuration, stopGap } = spinTiming();
+  const { firstStopDelay, stopGap, stopDuration, loopDuration } = spinTiming();
   const scatterCount = finalBoard.flat().filter((symbol) => symbol.id === "scatter").length;
   els.machine.classList.add("is-reel-spinning");
 
   await new Promise((resolve) => requestAnimationFrame(resolve));
   syncRollingReelMetrics();
 
-  const animations = reels.map((reel, index) => {
+  const loopAnimations = reels.map((reel) => {
     const strip = reel.querySelector(".reel-strip");
-    const travel = Math.max(0, strip.scrollHeight - reel.clientHeight);
+    const rowHeight = Number.parseFloat(reel.style.getPropertyValue("--reel-row-height")) || (reel.clientHeight / 3);
+    const gap = Number.parseFloat(reel.style.getPropertyValue("--reel-row-gap")) || 0;
+    const cycleDistance = (rowHeight + gap) * 3;
     strip.style.transform = "translate3d(0, 0, 0)";
     reel.classList.add("is-speeding");
-    const animation = strip.animate(
+    return strip.animate(
       [
         { transform: "translate3d(0, 0, 0)" },
-        { transform: `translate3d(0, -${Math.max(0, travel * 0.32)}px, 0)`, offset: 0.2 },
-        { transform: `translate3d(0, -${Math.max(0, travel - 48)}px, 0)`, offset: 0.8 },
-        { transform: `translate3d(0, -${travel + 20}px, 0)`, offset: 0.93 },
-        { transform: `translate3d(0, -${travel}px, 0)` },
+        { transform: `translate3d(0, -${cycleDistance}px, 0)` },
       ],
       {
-        duration: baseDuration + index * stopGap,
-        easing: reelStopEase,
-        fill: "forwards",
+        duration: loopDuration,
+        easing: "linear",
+        iterations: Infinity,
       },
     );
-    if (scatterCount >= 2 && index >= 3 && !state.turbo) {
-      window.setTimeout(() => reel.classList.add("is-anticipating"), baseDuration + (index - 2) * stopGap - 260);
-    }
-    animation.finished.then(() => {
-      reel.classList.remove("is-speeding");
-      reel.classList.remove("is-anticipating");
-      reel.classList.add("is-stopped");
-      playReelStop(index);
-      setTimeout(() => reel.classList.remove("is-stopped"), 360);
-    });
-    return animation.finished;
   });
 
-  await Promise.all(animations);
+  const stopReel = (reel, index) =>
+    new Promise((resolve) => {
+      const strip = reel.querySelector(".reel-strip");
+      const rowHeight = Number.parseFloat(reel.style.getPropertyValue("--reel-row-height")) || (reel.clientHeight / 3);
+      const gap = Number.parseFloat(reel.style.getPropertyValue("--reel-row-gap")) || 0;
+      const cycleDistance = (rowHeight + gap) * 3;
+      loopAnimations[index]?.cancel();
+      strip.innerHTML = [
+        ...finalBoard[index].map((symbol) => symbolMarkup(symbol, "is-final")),
+        ...Array.from({ length: 3 }, () => symbolMarkup(weightedSymbol(theme))),
+      ].join("");
+      strip.style.transform = `translate3d(0, -${cycleDistance}px, 0)`;
+      const landing = strip.animate(
+        [
+          { transform: `translate3d(0, -${cycleDistance}px, 0)` },
+          { transform: "translate3d(0, 18px, 0)", offset: 0.82 },
+          { transform: "translate3d(0, 0, 0)" },
+        ],
+        {
+          duration: stopDuration,
+          easing: reelStopEase,
+          fill: "forwards",
+        },
+      );
+      landing.finished.then(() => {
+        reel.classList.remove("is-speeding");
+        reel.classList.remove("is-anticipating");
+        reel.classList.add("is-stopped");
+        playReelStop(index);
+        setTimeout(() => reel.classList.remove("is-stopped"), 360);
+        resolve();
+      });
+    });
+
+  for (const [index, reel] of reels.entries()) {
+    let waitTime = index === 0 ? firstStopDelay : stopGap;
+    if (scatterCount >= 2 && index >= 3 && !state.turbo) {
+      reel.classList.add("is-anticipating");
+      waitTime += 820;
+    }
+    await new Promise((resolve) => setTimeout(resolve, waitTime));
+    await stopReel(reel, index);
+  }
+
+  loopAnimations.forEach((animation) => animation.cancel());
   els.machine.classList.remove("is-reel-spinning");
 }
 
@@ -717,15 +757,14 @@ function pulseWin(result, spend) {
 }
 
 function clearHighlights() {
+  window.clearTimeout(state.linePreviewTimer);
+  state.linePreviewTimer = 0;
   document.querySelectorAll(".symbol.is-hit").forEach((node) => node.classList.remove("is-hit"));
   els.paylineOverlay.innerHTML = "";
   els.paylineOverlay.classList.remove("is-active");
 }
 
-function highlightWins(board, wins) {
-  clearHighlights();
-  const reels = [...els.reels.querySelectorAll(".reel")];
-  const overlayRect = els.paylineOverlay.getBoundingClientRect();
+function appendPaylineDefs() {
   const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
   defs.innerHTML = `
     <linearGradient id="paylineGold" x1="0" x2="1" y1="0" y2="0">
@@ -744,6 +783,42 @@ function highlightWins(board, wins) {
     </filter>
   `;
   els.paylineOverlay.append(defs);
+}
+
+function paylinePoints(reels, overlayRect, line, count = 5) {
+  const points = [];
+  for (let col = 0; col < count; col += 1) {
+    const symbol = reels[col]?.querySelectorAll(".symbol")?.[line[col]];
+    if (symbol) {
+      const rect = symbol.getBoundingClientRect();
+      points.push(`${rect.left + rect.width / 2 - overlayRect.left},${rect.top + rect.height / 2 - overlayRect.top}`);
+    }
+  }
+  return points;
+}
+
+function previewActiveLines() {
+  window.clearTimeout(state.linePreviewTimer);
+  els.paylineOverlay.innerHTML = "";
+  appendPaylineDefs();
+  const reels = [...els.reels.querySelectorAll(".reel")];
+  const overlayRect = els.paylineOverlay.getBoundingClientRect();
+  PAYLINES.slice(0, currentLineCount()).forEach((line, lineIndex) => {
+    const points = paylinePoints(reels, overlayRect, line);
+    if (points.length >= 3) drawPayline(points, lineIndex, "preview");
+  });
+  els.paylineOverlay.classList.add("is-active", "is-previewing");
+  state.linePreviewTimer = window.setTimeout(() => {
+    els.paylineOverlay.innerHTML = "";
+    els.paylineOverlay.classList.remove("is-active", "is-previewing");
+  }, 1350);
+}
+
+function highlightWins(board, wins) {
+  clearHighlights();
+  const reels = [...els.reels.querySelectorAll(".reel")];
+  const overlayRect = els.paylineOverlay.getBoundingClientRect();
+  appendPaylineDefs();
 
   for (const win of wins) {
     if (win.lineIndex < 0) {
@@ -751,23 +826,19 @@ function highlightWins(board, wins) {
       continue;
     }
     const line = PAYLINES[win.lineIndex];
-    const points = [];
     for (let col = 0; col < win.count; col += 1) {
       const symbol = reels[col]?.querySelectorAll(".symbol")?.[line[col]];
       symbol?.classList.add("is-hit");
-      if (symbol) {
-        const rect = symbol.getBoundingClientRect();
-        points.push(`${rect.left + rect.width / 2 - overlayRect.left},${rect.top + rect.height / 2 - overlayRect.top}`);
-      }
     }
+    const points = paylinePoints(reels, overlayRect, line, win.count);
     if (points.length >= 3) drawPayline(points, win.lineIndex);
   }
   if (wins.length > 0) els.paylineOverlay.classList.add("is-active");
 }
 
-function drawPayline(points, lineIndex) {
+function drawPayline(points, lineIndex, mode = "win") {
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  group.setAttribute("class", `payline-burst payline-${lineIndex}`);
+  group.setAttribute("class", `payline-burst payline-${lineIndex} ${mode === "preview" ? "payline-preview" : ""}`);
 
   const under = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
   under.setAttribute("points", points.join(" "));
@@ -886,15 +957,19 @@ function bindEvents() {
     saveState();
   });
   els.lineDown.addEventListener("click", () => {
+    if (currentLineCount() <= 1) return;
     playButtonSound();
     state.lineCount = Math.max(1, currentLineCount() - 1);
     renderShell();
+    previewActiveLines();
     saveState();
   });
   els.lineUp.addEventListener("click", () => {
+    if (currentLineCount() >= PAYLINES.length) return;
     playButtonSound();
     state.lineCount = Math.min(PAYLINES.length, currentLineCount() + 1);
     renderShell();
+    previewActiveLines();
     saveState();
   });
   els.autoButton.addEventListener("click", () => {
