@@ -232,6 +232,17 @@ function renderSpinStrips(finalBoard, theme) {
     .join("");
 }
 
+function syncRollingReelMetrics() {
+  const reels = [...els.reels.querySelectorAll(".reel.is-rolling")];
+  for (const reel of reels) {
+    const styles = window.getComputedStyle(reel);
+    const gap = Number.parseFloat(styles.rowGap || styles.gap || "0") || 0;
+    const rowHeight = Math.max(1, (reel.clientHeight - gap * 2) / 3);
+    reel.style.setProperty("--reel-row-height", `${rowHeight}px`);
+    reel.style.setProperty("--reel-row-gap", `${gap}px`);
+  }
+}
+
 function evaluate(board, bet) {
   const wins = [];
   let total = 0;
@@ -448,6 +459,7 @@ async function animateReels(finalBoard, theme) {
   els.machine.classList.add("is-reel-spinning");
 
   await new Promise((resolve) => requestAnimationFrame(resolve));
+  syncRollingReelMetrics();
 
   const animations = reels.map((reel, index) => {
     const strip = reel.querySelector(".reel-strip");

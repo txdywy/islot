@@ -624,9 +624,9 @@ button {
 .reel {
   position: relative;
   display: grid;
-  grid-template-rows: repeat(3, minmax(80px, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: clamp(8px, 1.1vw, 13px);
-  min-height: clamp(272px, 38vw, 438px);
+  height: clamp(272px, 38vw, 438px);
   overflow: hidden;
   border-radius: 10px;
   contain: layout paint style;
@@ -649,10 +649,19 @@ button {
 
 .reel-strip {
   display: grid;
-  gap: clamp(8px, 1.1vw, 13px);
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  gap: var(--reel-row-gap, clamp(8px, 1.1vw, 13px));
   will-change: transform;
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
+}
+
+.reel-strip .symbol {
+  min-height: 0;
+  height: var(--reel-row-height, 128px);
 }
 
 .reel.is-rolling {
@@ -1672,7 +1681,7 @@ button {
 
   .reel {
     min-width: 0;
-    min-height: 236px;
+    height: 236px;
     gap: 6px;
   }
 
