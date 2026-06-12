@@ -79,12 +79,17 @@ button {
   font: inherit;
 }
 
+#confettiCanvas,
 #fxCanvas,
 .aurora,
 .snow-layer {
   position: fixed;
   inset: 0;
   pointer-events: none;
+}
+
+#confettiCanvas {
+  z-index: 19;
 }
 
 #fxCanvas {
@@ -633,7 +638,7 @@ button {
 }
 
 .payline-burst {
-  filter: url("#paylineGlow");
+  filter: none;
   opacity: 0;
   animation: paylineReveal 1.55s ease-out forwards;
 }
@@ -743,7 +748,7 @@ button {
 }
 
 .reel.is-speeding .reel-strip {
-  filter: blur(1.15px);
+  filter: none;
 }
 
 .reel.is-rolling .symbol-art {
@@ -776,6 +781,37 @@ button {
   opacity: 0.42;
   animation: speedLines 135ms linear infinite;
   transform: translate3d(0, 0, 0);
+}
+
+:root.is-low-fx .aurora,
+:root.is-low-fx .snow-layer,
+:root.is-low-fx body::before,
+:root.is-low-fx .machine::before,
+:root.is-low-fx .machine::after,
+:root.is-low-fx .spin-button::after,
+:root.is-low-fx .reel.is-speeding::after {
+  display: none !important;
+}
+
+:root.is-low-fx .rail-heading,
+:root.is-low-fx .panel-block,
+:root.is-low-fx .meter-card,
+:root.is-low-fx .bet-control,
+:root.is-low-fx .tab,
+:root.is-low-fx .icon-button,
+:root.is-low-fx .ghost-button,
+:root.is-low-fx .round-button,
+:root.is-low-fx .toast {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:root.is-low-fx .machine-lights,
+:root.is-low-fx .machine.is-reel-spinning .machine-rim,
+:root.is-low-fx .screen-shake,
+:root.is-low-fx .machine.is-small-hit,
+:root.is-low-fx .machine.is-mega-hit {
+  animation: none !important;
 }
 
 .reel.is-stopped {

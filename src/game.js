@@ -64,6 +64,7 @@ const els = {
   mute: document.querySelector("#muteButton"),
   turbo: document.querySelector("#turboButton"),
   toastStack: document.querySelector("#toastStack"),
+  confettiCanvas: document.querySelector("#confettiCanvas"),
   canvas: document.querySelector("#fxCanvas"),
 };
 
@@ -72,6 +73,14 @@ const fx = {
   particles: [],
   width: 0,
   height: 0,
+  low: false,
+  frame: 0,
+  reelsRect: null,
+  anticipatingRects: [],
+};
+
+const confettiFx = {
+  emit: null,
 };
 
 const format = new Intl.NumberFormat("zh-CN");
@@ -107,6 +116,96 @@ function currentLineCount() {
 
 function currentTotalBet() {
   return currentBet() * currentLineCount();
+}
+
+function detectLowFx() {
+  const cores = navigator.hardwareConcurrency || 4;
+  const memory = navigator.deviceMemory || 4;
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  return Boolean(reducedMotion || window.innerWidth < 768 || cores <= 4 || memory <= 4);
+}
+
+function updateFxQuality() {
+  fx.low = detectLowFx();
+  document.documentElement.classList.toggle("is-low-fx", fx.low);
+}
+
+function fxAmount(amount) {
+  return Math.max(1, Math.round(amount * (fx.low ? 0.48 : 0.74)));
+}
+
+function fxCap(cap) {
+  const isMobile = window.innerWidth < 768;
+  return Math.min(cap, fx.low ? (isMobile ? 135 : 260) : (isMobile ? 180 : 430));
+}
+
+function scheduleParticles(factory, amount, cap) {
+  const count = fxAmount(amount);
+  const batchSize = fx.low ? 18 : 34;
+  let created = 0;
+
+  function emitBatch() {
+    const end = Math.min(count, created + batchSize);
+    for (; created < end; created += 1) pushParticle(factory(created));
+    trimParticles(fxCap(cap));
+    if (created < count) {
+      window.setTimeout(emitBatch, fx.low ? 34 : 24);
+    }
+  }
+
+  emitBatch();
+  startFxLoop();
+}
+
+function initConfettiFx() {
+  if (!window.confetti || !els.confettiCanvas) return;
+  confettiFx.emit = window.confetti.create(els.confettiCanvas, {
+    resize: true,
+    useWorker: true,
+    disableForReducedMotion: true,
+  });
+}
+
+function launchPrizeConfetti(tier = "small") {
+  if (!confettiFx.emit && window.confetti && els.confettiCanvas) initConfettiFx();
+  const emit = confettiFx.emit || window.confetti;
+  if (!emit) {
+    spawnTreasureRain(tier);
+    return;
+  }
+
+  const theme = currentTheme();
+  const isMobile = window.innerWidth < 768;
+  const presets = {
+    small: { bursts: 2, particles: isMobile ? 28 : 46, spread: 62, scalar: isMobile ? 0.74 : 0.92, velocity: 46 },
+    big: { bursts: 4, particles: isMobile ? 34 : 64, spread: 78, scalar: isMobile ? 0.82 : 1.04, velocity: 56 },
+    mega: { bursts: 6, particles: isMobile ? 42 : 82, spread: 92, scalar: isMobile ? 0.9 : 1.18, velocity: 66 },
+  };
+  const preset = presets[tier] || presets.small;
+  const colors = ["#fff4a8", "#ffd45a", "#ff981f", "#ffffff", "#72ff9c", theme.accent, theme.second || theme.accent];
+  const shapes = ["circle", "square", "star"];
+
+  for (let i = 0; i < preset.bursts; i += 1) {
+    window.setTimeout(() => {
+      const side = i % 2 === 0 ? 0.18 : 0.82;
+      emit({
+        particleCount: Math.round(preset.particles * (fx.low ? 0.68 : 1)),
+        spread: preset.spread,
+        startVelocity: preset.velocity,
+        decay: 0.91,
+        gravity: 0.92,
+        ticks: fx.low ? 115 : 155,
+        scalar: preset.scalar,
+        shapes,
+        colors,
+        origin: {
+          x: i === 0 ? 0.5 : side + (Math.random() - 0.5) * 0.12,
+          y: i < 2 ? 0.32 : 0.18 + Math.random() * 0.22,
+        },
+        angle: i === 0 ? 90 : (side < 0.5 ? 56 : 124),
+      });
+    }, i * (fx.low ? 120 : 86));
+  }
 }
 
 function saveState() {
@@ -348,12 +447,15 @@ function resizeCanvas() {
 }
 function _doResize() {
   const isMobile = window.innerWidth < 768;
-  const ratio = Math.min(isMobile ? 1.5 : 2, window.devicePixelRatio || 1);
+  updateFxQuality();
+  const ratio = Math.min(fx.low ? 1.15 : (isMobile ? 1.35 : 1.65), window.devicePixelRatio || 1);
   fx.width = document.documentElement.clientWidth;
   fx.height = document.documentElement.clientHeight;
   els.canvas.width = Math.floor(fx.width * ratio);
   els.canvas.height = Math.floor(fx.height * ratio);
   fx.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  fx.reelsRect = null;
+  fx.anticipatingRects = [];
   syncAllReelMetrics();
 }
 
@@ -789,8 +891,8 @@ async function animateReels(finalBoard, theme, scrollCounts, nextStopIndices) {
 
 function spawnBurst(kind, amount = 120, customX = null, customY = null) {
   const isMobile = window.innerWidth < 768;
-  const count = isMobile ? Math.min(amount, 40) : amount;
-  const maxCap = isMobile ? 120 : 420;
+  const count = isMobile ? Math.min(amount, 34) : amount;
+  const maxCap = fxCap(isMobile ? 120 : 340);
   const theme = currentTheme();
   const palette = {
     goldstorm: ["#ffe27a", "#ff9a1f", "#ffffff", theme.accent],
@@ -802,10 +904,10 @@ function spawnBurst(kind, amount = 120, customX = null, customY = null) {
 
   const originX = customX !== null ? customX : fx.width * (0.42 + Math.random() * 0.18);
   const originY = customY !== null ? customY : fx.height * (0.28 + Math.random() * 0.28);
-  for (let i = 0; i < count; i += 1) {
+  scheduleParticles(() => {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1.5 + Math.random() * (kind === "blizzard" ? 5 : 12);
-    fx.particles.push({
+    return {
       x: originX + (customX !== null ? 0 : (Math.random() - 0.5) * 180),
       y: originY + (customY !== null ? 0 : (Math.random() - 0.5) * 120),
       vx: Math.cos(angle) * speed,
@@ -817,22 +919,18 @@ function spawnBurst(kind, amount = 120, customX = null, customY = null) {
       shape: Math.random() > 0.65 ? "coin" : "spark",
       gravity: kind === "blizzard" ? 0.01 : 0.12,
       spin: Math.random() * 8,
-    });
-  }
-  if (fx.particles.length > maxCap) {
-    fx.particles.splice(0, fx.particles.length - maxCap);
-  }
-  startFxLoop();
+    };
+  }, count, maxCap);
 }
 
 function spawnCoinShower(mega = false) {
   const isMobile = window.innerWidth < 768;
-  const amount = isMobile ? (mega ? 50 : 25) : (mega ? 260 : 130);
-  const maxCap = isMobile ? 120 : 520;
+  const amount = isMobile ? (mega ? 42 : 22) : (mega ? 190 : 88);
+  const maxCap = fxCap(isMobile ? 120 : 380);
   const colors = ["#fff4a8", "#ffd45a", "#ff981f", "#ffffff", currentTheme().accent];
-  for (let i = 0; i < amount; i += 1) {
+  scheduleParticles(() => {
     const fromTop = Math.random() > 0.34;
-    fx.particles.push({
+    return {
       x: fromTop ? Math.random() * fx.width : fx.width * (0.28 + Math.random() * 0.44),
       y: fromTop ? -30 - Math.random() * 240 : fx.height * (0.25 + Math.random() * 0.22),
       vx: (Math.random() - 0.5) * (fromTop ? 3.6 : 12),
@@ -844,12 +942,8 @@ function spawnCoinShower(mega = false) {
       shape: Math.random() > 0.18 ? "coin" : "spark",
       gravity: fromTop ? 0.12 : 0.2,
       spin: Math.random() * 8,
-    });
-  }
-  if (fx.particles.length > maxCap) {
-    fx.particles.splice(0, fx.particles.length - maxCap);
-  }
-  startFxLoop();
+    };
+  }, amount, maxCap);
 }
 
 function showWinSplash(amount, mega) {
@@ -897,8 +991,8 @@ function unlockTheme(theme) {
   state.themeProgress[theme.id] = 0;
   showUnlockSplash(theme);
   toast("新关卡解锁！", `「${theme.name}」已经开放，点击主题卡进入。`);
-  spawnBurst(theme.effect, 340);
-  spawnCoinShower(true);
+  launchPrizeConfetti("mega");
+  spawnBurst(theme.effect, 90);
   playFreeSpinSound();
   renderThemes();
   renderShell();
@@ -987,6 +1081,7 @@ function pushParticle(particle) {
 }
 
 function trimParticles(cap = window.innerWidth < 768 ? 150 : 520) {
+  cap = fxCap(cap);
   if (fx.particles.length > cap) {
     fx.particles.splice(0, fx.particles.length - cap);
   }
@@ -996,19 +1091,19 @@ function spawnTreasureRain(tier = "small") {
   const isMobile = window.innerWidth < 768;
   const theme = currentTheme();
   const config = {
-    small: { amount: isMobile ? 26 : 70, cap: isMobile ? 130 : 380, speed: 1 },
-    big: { amount: isMobile ? 70 : 210, cap: isMobile ? 180 : 560, speed: 1.25 },
-    mega: { amount: isMobile ? 120 : 360, cap: isMobile ? 240 : 760, speed: 1.55 },
-  }[tier] || { amount: 70, cap: 420, speed: 1 };
+    small: { amount: isMobile ? 20 : 52, cap: isMobile ? 115 : 300, speed: 1 },
+    big: { amount: isMobile ? 46 : 126, cap: isMobile ? 145 : 360, speed: 1.18 },
+    mega: { amount: isMobile ? 74 : 210, cap: isMobile ? 175 : 430, speed: 1.34 },
+  }[tier] || { amount: 52, cap: 300, speed: 1 };
   const shapes = tier === "small"
     ? ["coin", "coin", "diamond", "spark"]
     : ["coin", "coin", "diamond", "goldbar", "bill", "spark"];
   const palette = ["#fff4a8", "#ffd45a", "#ff981f", "#ffffff", theme.accent, theme.second || theme.accent];
 
-  for (let i = 0; i < config.amount; i += 1) {
+  scheduleParticles(() => {
     const shape = shapes[Math.floor(Math.random() * shapes.length)];
     const fromTop = Math.random() > 0.22;
-    pushParticle({
+    return {
       x: fromTop ? Math.random() * fx.width : fx.width * (0.24 + Math.random() * 0.52),
       y: fromTop ? -30 - Math.random() * fx.height * 0.28 : fx.height * (0.22 + Math.random() * 0.25),
       vx: (Math.random() - 0.5) * (fromTop ? 3.8 : 13) * config.speed,
@@ -1021,10 +1116,8 @@ function spawnTreasureRain(tier = "small") {
       gravity: shape === "bill" ? 0.07 : 0.14,
       spin: Math.random() * Math.PI * 2,
       wobble: Math.random() * Math.PI * 2,
-    });
-  }
-  trimParticles(config.cap);
-  startFxLoop();
+    };
+  }, config.amount, config.cap);
 }
 
 function drawLightning(ctx, x1, y1, x2, y2, color, width, isMobile) {
@@ -1086,35 +1179,42 @@ function fxLoop() {
   }
   
   const isMobile = window.innerWidth < 768;
+  fx.frame += 1;
   fx.ctx.clearRect(0, 0, fx.width, fx.height);
-  const canvasRect = els.canvas.getBoundingClientRect();
+  const particleLoad = fx.particles.length;
+  const useGlow = !isMobile && !fx.low && particleLoad < 190;
+  const drawDetails = particleLoad < (fx.low ? 120 : 260);
   
   // 1. Draw lightning for anticipating reels
-  if (!isMobile || Math.random() < 0.85) {
-    const anticipatingReels = document.querySelectorAll(".reel.is-anticipating");
-    anticipatingReels.forEach((reel) => {
-      const rect = reel.getBoundingClientRect();
+  if (!isMobile && !fx.low && fx.frame % 2 === 0) {
+    if (fx.frame % 8 === 0) {
+      fx.anticipatingRects = [...document.querySelectorAll(".reel.is-anticipating")].map((reel) => {
+        const rect = reel.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      });
+    }
+    fx.anticipatingRects.forEach((rect) => {
       const theme = currentTheme();
       const lightningColor = theme.second || theme.accent;
-      const leftX = rect.left - canvasRect.left;
-      const rightX = rect.right - canvasRect.left;
-      const topY = rect.top - canvasRect.top;
-      const bottomY = rect.bottom - canvasRect.top;
-      drawLightning(fx.ctx, leftX, topY, leftX, bottomY, lightningColor, 3, isMobile);
-      drawLightning(fx.ctx, rightX, topY, rightX, bottomY, lightningColor, 3, isMobile);
+      drawLightning(fx.ctx, rect.left, rect.top, rect.left, rect.bottom, lightningColor, 3, isMobile);
+      drawLightning(fx.ctx, rect.right, rect.top, rect.right, rect.bottom, lightningColor, 3, isMobile);
     });
   }
   
   // 2. Spawn flame sparks during spinning
-  if (state.spinning) {
-    const reelsRect = els.reels.getBoundingClientRect();
-    const spawnCount = isMobile ? 1 : 2;
+  if (state.spinning && fx.frame % (fx.low ? 5 : 3) === 0) {
+    if (!fx.reelsRect || fx.frame % 15 === 0) {
+      const rect = els.reels.getBoundingClientRect();
+      fx.reelsRect = { left: rect.left, bottom: rect.bottom, width: rect.width };
+    }
+    const reelsRect = fx.reelsRect;
+    const spawnCount = isMobile || fx.low ? 1 : 2;
     const colors = ["#ff3300", "#ff6600", "#ffaa00", "#ffd45a", "#ffffff"];
     for (let j = 0; j < spawnCount; j += 1) {
-      if (Math.random() < 0.45) {
+      if (Math.random() < (fx.low ? 0.16 : 0.28)) {
         fx.particles.push({
-          x: reelsRect.left - canvasRect.left + Math.random() * reelsRect.width,
-          y: reelsRect.bottom - canvasRect.top - Math.random() * 10,
+          x: reelsRect.left + Math.random() * reelsRect.width,
+          y: reelsRect.bottom - Math.random() * 10,
           vx: (Math.random() - 0.5) * (isMobile ? 2.5 : 4.5),
           vy: -3.5 - Math.random() * (isMobile ? 3.5 : 6),
           life: isMobile ? 18 + Math.random() * 15 : 28 + Math.random() * 25,
@@ -1189,7 +1289,7 @@ function fxLoop() {
       }
       
       // Spawn trail spark with low probability to save performance
-      const sparkProb = isMobile ? 0.35 : 0.65;
+      const sparkProb = fx.low ? 0.12 : (isMobile ? 0.2 : 0.34);
       if (Math.random() < sparkProb) {
         newSparks.push({
           x: p.x,
@@ -1209,9 +1309,9 @@ function fxLoop() {
       // Render tracer head
       fx.ctx.save();
       fx.ctx.fillStyle = p.color;
-      if (!isMobile) {
+      if (useGlow) {
         fx.ctx.shadowColor = p.color;
-        fx.ctx.shadowBlur = 10;
+        fx.ctx.shadowBlur = 7;
       }
       fx.ctx.beginPath();
       fx.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -1233,17 +1333,19 @@ function fxLoop() {
     fx.ctx.translate(p.x, p.y);
     fx.ctx.rotate(p.spin);
     fx.ctx.fillStyle = p.color;
-    if (!isMobile) {
+    if (useGlow && p.shape !== "bill" && p.shape !== "goldbar") {
       fx.ctx.shadowColor = p.color;
-      fx.ctx.shadowBlur = p.shape === "coin" ? 12 : 8;
+      fx.ctx.shadowBlur = p.shape === "coin" ? 7 : 5;
     }
     if (p.shape === "coin") {
       fx.ctx.beginPath();
       fx.ctx.ellipse(0, 0, p.size * 1.3, p.size * 0.75, 0, 0, Math.PI * 2);
       fx.ctx.fill();
-      fx.ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
-      fx.ctx.lineWidth = Math.max(1, p.size * 0.12);
-      fx.ctx.stroke();
+      if (drawDetails) {
+        fx.ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+        fx.ctx.lineWidth = Math.max(1, p.size * 0.12);
+        fx.ctx.stroke();
+      }
     } else if (p.shape === "diamond") {
       fx.ctx.beginPath();
       fx.ctx.moveTo(0, -p.size * 1.1);
@@ -1252,9 +1354,11 @@ function fxLoop() {
       fx.ctx.lineTo(-p.size * 1.15, 0);
       fx.ctx.closePath();
       fx.ctx.fill();
-      fx.ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
-      fx.ctx.lineWidth = Math.max(1, p.size * 0.1);
-      fx.ctx.stroke();
+      if (drawDetails) {
+        fx.ctx.strokeStyle = "rgba(255, 255, 255, 0.62)";
+        fx.ctx.lineWidth = Math.max(1, p.size * 0.1);
+        fx.ctx.stroke();
+      }
     } else if (p.shape === "goldbar") {
       const w = p.size * 2.3;
       const h = p.size * 1.05;
@@ -1285,10 +1389,7 @@ function fxLoop() {
   
   if (newSparks.length > 0) {
     fx.particles.push(...newSparks);
-    const maxCap = isMobile ? 120 : 420;
-    if (fx.particles.length > maxCap) {
-      fx.particles.splice(0, fx.particles.length - maxCap);
-    }
+    trimParticles(isMobile ? 120 : 360);
   }
   
   requestAnimationFrame(fxLoop);
@@ -1318,9 +1419,9 @@ function pulseWin(result, spend) {
     els.shell.classList.add("screen-shake");
     setTimeout(() => els.shell.classList.remove("screen-shake"), 700);
     setTimeout(() => els.machine.classList.remove("is-mega-hit", "is-small-hit"), mega ? 1600 : 900);
-    spawnBurst(theme.effect, mega ? 260 : 130);
-    spawnCoinShower(mega);
-    spawnTreasureRain(mega ? "mega" : result.total >= currentBet() * currentLineCount() * 12 ? "big" : "small");
+    const winTier = mega ? "mega" : result.total >= currentBet() * currentLineCount() * 12 ? "big" : "small";
+    launchPrizeConfetti(winTier);
+    spawnBurst(theme.effect, mega ? 72 : 38);
     showWinSplash(result.total, mega);
     playWinSound(mega);
     toast(mega ? "爆炸大奖！" : "中奖！", `${result.wins.length} 条高光 · 净收益 ${format.format(net)}`);
@@ -1333,8 +1434,8 @@ function pulseWin(result, spend) {
   if (result.freeSpinsWon > 0) {
     toast("免费旋转触发", `获得 ${result.freeSpinsWon} 次免费局`);
     playFreeSpinSound();
-    spawnBurst("blizzard", 180);
-    spawnTreasureRain("big");
+    launchPrizeConfetti("big");
+    spawnBurst("blizzard", 56);
   }
 }
 
@@ -1661,6 +1762,7 @@ function init() {
   renderShell();
   renderBoard(randomBoard(currentTheme()), []);
   bindEvents();
+  initConfettiFx();
   spawnBurst("goldstorm", 80);
 }
 
