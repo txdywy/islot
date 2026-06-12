@@ -10,6 +10,7 @@
     <title>iSlot | 爆燃奇境老虎机</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="preload" href="assets/islot-casino-stage.png" as="image" />
+    <link rel="preload" href="assets/islot-symbol-atlas.png" as="image" />
     <link rel="preload" href="assets/islot-concept.png" as="image" />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -66,8 +67,7 @@
             <div class="machine-rim" aria-hidden="true"></div>
             <div class="reel-window">
               <div class="reel-vignette" aria-hidden="true"></div>
-              <div class="payline-line line-mid"></div>
-              <div class="payline-line line-zig"></div>
+              <svg class="payline-overlay" id="paylineOverlay" aria-hidden="true"></svg>
               <div class="reels" id="reels"></div>
             </div>
             <div class="win-banner" id="winBanner" role="status" aria-live="polite">

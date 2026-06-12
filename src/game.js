@@ -25,6 +25,7 @@ const els = {
   shell: document.querySelector("#gameShell"),
   machine: document.querySelector("#machine"),
   reels: document.querySelector("#reels"),
+  paylineOverlay: document.querySelector("#paylineOverlay"),
   themeList: document.querySelector("#themeList"),
   themeCount: document.querySelector("#themeCount"),
   balance: document.querySelector("#balanceValue"),
@@ -145,6 +146,7 @@ function spinStrip(theme, finalColumn) {
 function symbolMarkup(symbol, extraClass = "") {
   return `
     <div class="symbol symbol-${symbol.id} ${extraClass}" data-symbol="${symbol.id}">
+      <span class="symbol-art" aria-hidden="true"></span>
       <span class="glyph">${symbol.glyph}</span>
       <small>${symbol.label}</small>
     </div>
@@ -493,21 +495,78 @@ function pulseWin(result, spend) {
 
 function clearHighlights() {
   document.querySelectorAll(".symbol.is-hit").forEach((node) => node.classList.remove("is-hit"));
+  els.paylineOverlay.innerHTML = "";
+  els.paylineOverlay.classList.remove("is-active");
 }
 
 function highlightWins(board, wins) {
   clearHighlights();
   const reels = [...els.reels.querySelectorAll(".reel")];
+  const overlayRect = els.paylineOverlay.getBoundingClientRect();
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  defs.innerHTML = `
+    <linearGradient id="paylineGold" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#fff7bc" stop-opacity="0"/>
+      <stop offset="22%" stop-color="#ff36dc"/>
+      <stop offset="50%" stop-color="#fff5a8"/>
+      <stop offset="76%" stop-color="#20efff"/>
+      <stop offset="100%" stop-color="#fff7bc" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="paylineGlow" x="-30%" y="-80%" width="160%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  `;
+  els.paylineOverlay.append(defs);
+
   for (const win of wins) {
     if (win.lineIndex < 0) {
       document.querySelectorAll('[data-symbol="scatter"]').forEach((node) => node.classList.add("is-hit"));
       continue;
     }
     const line = PAYLINES[win.lineIndex];
+    const points = [];
     for (let col = 0; col < win.count; col += 1) {
-      reels[col]?.querySelectorAll(".symbol")?.[line[col]]?.classList.add("is-hit");
+      const symbol = reels[col]?.querySelectorAll(".symbol")?.[line[col]];
+      symbol?.classList.add("is-hit");
+      if (symbol) {
+        const rect = symbol.getBoundingClientRect();
+        points.push(`${rect.left + rect.width / 2 - overlayRect.left},${rect.top + rect.height / 2 - overlayRect.top}`);
+      }
     }
+    if (points.length >= 3) drawPayline(points, win.lineIndex);
   }
+  if (wins.length > 0) els.paylineOverlay.classList.add("is-active");
+}
+
+function drawPayline(points, lineIndex) {
+  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.setAttribute("class", `payline-burst payline-${lineIndex}`);
+
+  const under = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  under.setAttribute("points", points.join(" "));
+  under.setAttribute("class", "payline-under");
+  group.append(under);
+
+  const main = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  main.setAttribute("points", points.join(" "));
+  main.setAttribute("class", "payline-main");
+  group.append(main);
+
+  points.forEach((point, index) => {
+    const [cx, cy] = point.split(",").map(Number);
+    const spark = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    spark.setAttribute("cx", cx);
+    spark.setAttribute("cy", cy);
+    spark.setAttribute("r", index === 0 || index === points.length - 1 ? 7 : 5);
+    spark.setAttribute("class", "payline-spark");
+    group.append(spark);
+  });
+
+  els.paylineOverlay.append(group);
 }
 
 async function spin() {

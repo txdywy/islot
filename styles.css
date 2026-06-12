@@ -540,6 +540,50 @@ button {
   opacity: 0.36;
 }
 
+.payline-overlay {
+  position: absolute;
+  z-index: 9;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.payline-burst {
+  filter: url("#paylineGlow");
+  opacity: 0;
+  animation: paylineReveal 1.55s ease-out forwards;
+}
+
+.payline-under,
+.payline-main {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.payline-under {
+  stroke: rgba(255, 175, 40, 0.72);
+  stroke-width: 15;
+  opacity: 0.52;
+}
+
+.payline-main {
+  stroke: url("#paylineGold");
+  stroke-width: 7;
+  stroke-dasharray: 28 420;
+  animation: paylineRun 1.2s ease-out 90ms forwards;
+}
+
+.payline-spark {
+  fill: #fff4a8;
+  stroke: #ff4ee8;
+  stroke-width: 2;
+  transform-origin: center;
+  animation: paylineSpark 1.1s ease-out forwards;
+}
+
 .reels {
   display: grid;
   grid-template-columns: repeat(5, minmax(78px, 1fr));
@@ -642,6 +686,17 @@ button {
     0 14px 30px rgba(0, 0, 0, 0.26);
 }
 
+.symbol-art {
+  display: block;
+  width: min(88%, 126px);
+  aspect-ratio: 1;
+  background-image: url("assets/islot-symbol-atlas.png");
+  background-repeat: no-repeat;
+  background-size: 300% 200%;
+  filter: drop-shadow(0 0 16px color-mix(in srgb, var(--theme) 42%, transparent));
+  transform: translateZ(0);
+}
+
 .symbol::after {
   content: "";
   position: absolute;
@@ -668,6 +723,7 @@ button {
 }
 
 .glyph {
+  display: none;
   color: #fff;
   font-size: clamp(40px, 6vw, 82px);
   font-weight: 950;
@@ -676,6 +732,61 @@ button {
     0 2px 0 rgba(0, 0, 0, 0.32),
     0 0 12px currentColor,
     0 0 26px color-mix(in srgb, var(--theme) 72%, transparent);
+}
+
+.symbol-seven .symbol-art {
+  display: none;
+}
+
+.symbol-seven .glyph {
+  display: block;
+  color: #ffd66b;
+  font-size: clamp(46px, 7vw, 94px);
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: 0;
+  background: linear-gradient(180deg, #fff7bc, #ffc447 45%, #b84d00 72%, #fff0a1);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.symbol-wild .symbol-art {
+  background-position: 0% 0%;
+}
+
+.symbol-crown .symbol-art,
+.symbol-mask .symbol-art,
+.symbol-eclipse .symbol-art {
+  background-position: 50% 0%;
+}
+
+.symbol-bell .symbol-art,
+.symbol-forge .symbol-art,
+.symbol-pyramid .symbol-art,
+.symbol-ankh .symbol-art {
+  background-position: 100% 0%;
+}
+
+.symbol-cherry .symbol-art,
+.symbol-coin .symbol-art,
+.symbol-flame .symbol-art {
+  background-position: 0% 100%;
+}
+
+.symbol-scatter .symbol-art,
+.symbol-aurora .symbol-art,
+.symbol-flake .symbol-art {
+  background-position: 50% 100%;
+}
+
+.symbol-diamond .symbol-art,
+.symbol-scarab .symbol-art,
+.symbol-jade .symbol-art,
+.symbol-serpent .symbol-art,
+.symbol-totem .symbol-art,
+.symbol-crystal .symbol-art,
+.symbol-moon .symbol-art {
+  background-position: 100% 100%;
 }
 
 .symbol small {
@@ -1120,6 +1231,45 @@ button {
   }
 }
 
+@keyframes paylineReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  15%,
+  72% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.92;
+  }
+}
+
+@keyframes paylineRun {
+  from {
+    stroke-dashoffset: 460;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes paylineSpark {
+  0% {
+    opacity: 0;
+    r: 2;
+  }
+  28% {
+    opacity: 1;
+    r: 10;
+  }
+  100% {
+    opacity: 0.82;
+    r: 5;
+  }
+}
+
 @keyframes hitPulse {
   50% {
     transform: scale(1.035);
@@ -1392,6 +1542,10 @@ button {
   .symbol {
     min-width: 0;
     min-height: 70px;
+  }
+
+  .symbol-art {
+    width: min(92%, 78px);
   }
 
   .glyph {
