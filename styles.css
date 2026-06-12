@@ -922,10 +922,10 @@ button {
 
 .control-deck {
   display: grid;
-  grid-template-columns: 1fr 1fr minmax(142px, 0.78fr) 1fr 1fr;
+  grid-template-columns: minmax(130px, 0.9fr) minmax(172px, 1.15fr) minmax(172px, 1.15fr) minmax(150px, 0.92fr) minmax(130px, 0.84fr) minmax(130px, 0.84fr);
   gap: 10px;
   align-items: stretch;
-  width: min(980px, 100%);
+  width: min(1160px, 100%);
   margin: -4px auto 0;
 }
 
@@ -947,16 +947,20 @@ button {
 
 .bet-control {
   display: grid;
-  grid-template-columns: 40px 1fr 40px;
-  gap: 8px;
+  grid-template-columns: 36px minmax(58px, 1fr) 36px;
+  gap: 6px;
   align-items: center;
   text-align: center;
 }
 
+.bet-control span {
+  white-space: nowrap;
+}
+
 .round-button {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   place-items: center;
   border-radius: 999px;
   font-size: 24px;

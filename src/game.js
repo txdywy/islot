@@ -8,6 +8,7 @@ const state = {
   heat: Number(localStorage.getItem("islot-heat") || 0),
   unlockedThemes: readStoredJson("islot-unlocked-themes", ["vegas"]),
   themeProgress: readStoredJson("islot-theme-progress", {}),
+  lineCount: clampNumber(Number(localStorage.getItem("islot-line-count") || PAYLINES.length), 1, PAYLINES.length),
   spinning: false,
   turbo: false,
   muted: false,
@@ -22,8 +23,6 @@ const audio = {
   spinGain: null,
   spinNoise: null,
   spinNoiseGain: null,
-  tickTimer: 0,
-  tickCount: 0,
   noiseBuffer: null,
 };
 
@@ -36,6 +35,7 @@ const els = {
   themeCount: document.querySelector("#themeCount"),
   balance: document.querySelector("#balanceValue"),
   bet: document.querySelector("#betValue"),
+  lineCount: document.querySelector("#lineCountValue"),
   jackpot: document.querySelector("#jackpotValue"),
   freeSpins: document.querySelector("#freeSpinsValue"),
   themeName: document.querySelector("#currentThemeName"),
@@ -52,6 +52,8 @@ const els = {
   bankAdd: document.querySelector("#bankAddButton"),
   betDown: document.querySelector("#betDown"),
   betUp: document.querySelector("#betUp"),
+  lineDown: document.querySelector("#lineDown"),
+  lineUp: document.querySelector("#lineUp"),
   mute: document.querySelector("#muteButton"),
   turbo: document.querySelector("#turboButton"),
   toastStack: document.querySelector("#toastStack"),
@@ -68,6 +70,10 @@ const fx = {
 const format = new Intl.NumberFormat("zh-CN");
 const reelStopEase = "cubic-bezier(.12, .78, .12, 1)";
 const THEME_UNLOCK_TARGET = 100;
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+}
 
 if (!state.unlockedThemes.includes("vegas")) state.unlockedThemes.unshift("vegas");
 if (!state.unlockedThemes.includes(state.themeId)) state.themeId = state.unlockedThemes[0];
@@ -88,12 +94,21 @@ function currentBet() {
   return BET_STEPS[state.betIndex];
 }
 
+function currentLineCount() {
+  return clampNumber(state.lineCount, 1, PAYLINES.length);
+}
+
+function currentTotalBet() {
+  return currentBet() * currentLineCount();
+}
+
 function saveState() {
   localStorage.setItem("islot-theme", state.themeId);
   localStorage.setItem("islot-balance", String(state.balance));
   localStorage.setItem("islot-bet-index", String(state.betIndex));
   localStorage.setItem("islot-free-spins", String(state.freeSpins));
   localStorage.setItem("islot-heat", String(state.heat));
+  localStorage.setItem("islot-line-count", String(currentLineCount()));
   localStorage.setItem("islot-unlocked-themes", JSON.stringify(state.unlockedThemes));
   localStorage.setItem("islot-theme-progress", JSON.stringify(state.themeProgress));
 }
@@ -126,9 +141,13 @@ function renderShell() {
   els.themeName.textContent = theme.name;
   els.balance.textContent = format.format(state.balance);
   els.bet.textContent = format.format(currentBet());
+  els.lineCount.textContent = currentLineCount();
   els.jackpot.textContent = format.format(theme.jackpot + state.heat * currentBet() * 7);
   els.freeSpins.textContent = state.freeSpins;
-  els.spinHint.textContent = state.freeSpins > 0 ? "免费局 · 不扣金币" : "5 条线 · 爆奖模式";
+  els.spinHint.textContent =
+    state.freeSpins > 0
+      ? `${currentLineCount()} 条线 · 免费局`
+      : `${currentLineCount()} 条线 · 总下注 ${format.format(currentTotalBet())}`;
   els.autoButton.classList.toggle("is-active", state.auto);
   els.turbo.classList.toggle("is-active", state.turbo);
   els.mute.classList.toggle("is-active", state.muted);
@@ -189,7 +208,7 @@ function randomBoard(theme) {
 }
 
 function spinStrip(theme, finalColumn) {
-  const stripLength = state.turbo ? 18 : 30;
+  const stripLength = state.turbo ? 24 : 46;
   return [...Array.from({ length: stripLength }, () => weightedSymbol(theme)), ...finalColumn];
 }
 
@@ -243,11 +262,11 @@ function syncRollingReelMetrics() {
   }
 }
 
-function evaluate(board, bet) {
+function evaluate(board, bet, lineCount = currentLineCount()) {
   const wins = [];
   let total = 0;
 
-  for (const [lineIndex, line] of PAYLINES.entries()) {
+  for (const [lineIndex, line] of PAYLINES.slice(0, lineCount).entries()) {
     const rowSymbols = line.map((row, col) => board[col][row]);
     const base = rowSymbols.find((symbol) => symbol.id !== "wild") || rowSymbols[0];
     if (base.id === "scatter") continue;
@@ -270,12 +289,13 @@ function evaluate(board, bet) {
   let freeSpinsWon = 0;
   if (scatters >= 3) {
     freeSpinsWon = scatters + 5;
-    const scatterPay = scatters * bet * 12;
+    const scatterMultiplier = scatters * 2.4;
+    const scatterPay = Math.round(scatterMultiplier * bet * lineCount);
     total += scatterPay;
-    wins.push({ lineIndex: -1, symbol: { label: "SCATTER", glyph: "✦" }, count: scatters, amount: scatterPay, multiplier: scatters * 12 });
+    wins.push({ lineIndex: -1, symbol: { label: "SCATTER", glyph: "✦" }, count: scatters, amount: scatterPay, multiplier: scatterMultiplier * lineCount });
   }
 
-  return { total, wins, freeSpinsWon, scatters };
+  return { total, wins, freeSpinsWon, scatters, lineCount };
 }
 
 function resizeCanvas() {
@@ -342,9 +362,20 @@ function noiseHit(duration = 0.12, volume = 0.2, cutoff = 1400, when = 0) {
   source.stop(start + duration);
 }
 
-function startSpinSound() {
+function spinTiming() {
+  const baseDuration = state.turbo ? 920 : 1850;
+  const stopGap = state.turbo ? 165 : 430;
+  return {
+    baseDuration,
+    stopGap,
+    totalDuration: baseDuration + stopGap * (5 - 1),
+  };
+}
+
+function startSpinSound(totalDuration = spinTiming().totalDuration) {
   const ctx = ensureAudio();
   if (!ctx || audio.spinOsc) return;
+  const now = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
@@ -352,12 +383,13 @@ function startSpinSound() {
   const noiseFilter = ctx.createBiquadFilter();
   const noiseGain = ctx.createGain();
   osc.type = "sawtooth";
-  osc.frequency.setValueAtTime(55, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 160 : 118, ctx.currentTime + 0.32);
+  osc.frequency.setValueAtTime(58, now);
+  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 182 : 132, now + 0.42);
+  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 112 : 82, now + totalDuration / 1000);
   filter.type = "lowpass";
   filter.frequency.value = 740;
-  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.08);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.11, now + 0.08);
   osc.connect(filter);
   filter.connect(gain);
   gain.connect(audio.master);
@@ -365,10 +397,11 @@ function startSpinSound() {
   noise.buffer = audio.noiseBuffer;
   noise.loop = true;
   noiseFilter.type = "bandpass";
-  noiseFilter.frequency.setValueAtTime(state.turbo ? 1500 : 1150, ctx.currentTime);
+  noiseFilter.frequency.setValueAtTime(state.turbo ? 1800 : 1380, now);
+  noiseFilter.frequency.exponentialRampToValueAtTime(state.turbo ? 1120 : 820, now + totalDuration / 1000);
   noiseFilter.Q.value = 1.2;
-  noiseGain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  noiseGain.gain.exponentialRampToValueAtTime(state.turbo ? 0.065 : 0.09, ctx.currentTime + 0.12);
+  noiseGain.gain.setValueAtTime(0.0001, now);
+  noiseGain.gain.exponentialRampToValueAtTime(state.turbo ? 0.072 : 0.105, now + 0.12);
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
   noiseGain.connect(audio.master);
@@ -379,16 +412,12 @@ function startSpinSound() {
   audio.spinGain = gain;
   audio.spinNoise = noise;
   audio.spinNoiseGain = noiseGain;
-  audio.tickCount = 0;
-  window.clearInterval(audio.tickTimer);
-  audio.tickTimer = window.setInterval(playSpinTick, state.turbo ? 58 : 72);
+  scheduleSpinTicks(totalDuration);
   noiseHit(0.18, 0.16, 900);
 }
 
 function stopSpinSound() {
   const ctx = audio.ctx;
-  window.clearInterval(audio.tickTimer);
-  audio.tickTimer = 0;
   if (!ctx) return;
   if (audio.spinOsc && audio.spinGain) {
     audio.spinGain.gain.cancelScheduledValues(ctx.currentTime);
@@ -408,10 +437,19 @@ function stopSpinSound() {
   audio.spinNoiseGain = null;
 }
 
-function playSpinTick() {
-  audio.tickCount += 1;
-  const pitch = 720 + (audio.tickCount % 7) * 38;
-  tone(pitch, 0.026, "square", audio.tickCount % 3 === 0 ? 0.034 : 0.022);
+function scheduleSpinTicks(totalDuration) {
+  const step = state.turbo ? 0.064 : 0.074;
+  const seconds = totalDuration / 1000;
+  const count = Math.floor(seconds / step);
+  for (let i = 0; i < count; i += 1) {
+    const t = 0.04 + i * step;
+    const phase = i / Math.max(1, count - 1);
+    const shimmer = i % 5 === 0 ? 140 : i % 3 === 0 ? 72 : 0;
+    const pitch = 680 + (i % 8) * 34 + shimmer - phase * 110;
+    const volume = (state.turbo ? 0.027 : 0.033) * (1 - phase * 0.28);
+    tone(pitch, 0.024, i % 4 === 0 ? "triangle" : "square", volume, t);
+    if (i % 4 === 0) noiseHit(0.028, 0.026, 2100 + (i % 6) * 170, t + 0.006);
+  }
 }
 
 function playButtonSound() {
@@ -453,8 +491,7 @@ function playWinSound(mega = false) {
 async function animateReels(finalBoard, theme) {
   renderSpinStrips(finalBoard, theme);
   const reels = [...els.reels.querySelectorAll(".reel")];
-  const baseDuration = state.turbo ? 760 : 1320;
-  const stopGap = state.turbo ? 135 : 330;
+  const { baseDuration, stopGap } = spinTiming();
   const scatterCount = finalBoard.flat().filter((symbol) => symbol.id === "scatter").length;
   els.machine.classList.add("is-reel-spinning");
 
@@ -469,9 +506,9 @@ async function animateReels(finalBoard, theme) {
     const animation = strip.animate(
       [
         { transform: "translate3d(0, 0, 0)" },
-        { transform: `translate3d(0, -${Math.max(0, travel * 0.24)}px, 0)`, offset: 0.18 },
-        { transform: `translate3d(0, -${Math.max(0, travel - 34)}px, 0)`, offset: 0.78 },
-        { transform: `translate3d(0, -${travel + 16}px, 0)`, offset: 0.92 },
+        { transform: `translate3d(0, -${Math.max(0, travel * 0.32)}px, 0)`, offset: 0.2 },
+        { transform: `translate3d(0, -${Math.max(0, travel - 48)}px, 0)`, offset: 0.8 },
+        { transform: `translate3d(0, -${travel + 20}px, 0)`, offset: 0.93 },
         { transform: `translate3d(0, -${travel}px, 0)` },
       ],
       {
@@ -759,7 +796,8 @@ async function spin() {
   if (state.spinning) return;
   playButtonSound();
   const bet = currentBet();
-  const lineCost = bet * PAYLINES.length;
+  const lineCount = currentLineCount();
+  const lineCost = bet * lineCount;
   const isFree = state.freeSpins > 0;
   if (!isFree && state.balance < lineCost) {
     toast("金币不够啦", "点“爽充金币”可以立即加金币。");
@@ -779,11 +817,11 @@ async function spin() {
   renderShell();
 
   const board = randomBoard(theme);
-  startSpinSound();
+  startSpinSound(spinTiming().totalDuration);
   await animateReels(board, theme);
   stopSpinSound();
   renderBoard(board, []);
-  const result = evaluate(board, bet);
+  const result = evaluate(board, bet, lineCount);
   state.balance += result.total;
   state.freeSpins += result.freeSpinsWon;
   state.heat = result.total > 0 ? Math.min(7, state.heat + 1) : Math.max(0, state.heat - 1);
@@ -844,6 +882,18 @@ function bindEvents() {
   els.betUp.addEventListener("click", () => {
     playButtonSound();
     state.betIndex = Math.min(BET_STEPS.length - 1, state.betIndex + 1);
+    renderShell();
+    saveState();
+  });
+  els.lineDown.addEventListener("click", () => {
+    playButtonSound();
+    state.lineCount = Math.max(1, currentLineCount() - 1);
+    renderShell();
+    saveState();
+  });
+  els.lineUp.addEventListener("click", () => {
+    playButtonSound();
+    state.lineCount = Math.min(PAYLINES.length, currentLineCount() + 1);
     renderShell();
     saveState();
   });
