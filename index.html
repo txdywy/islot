@@ -9,6 +9,7 @@
     />
     <title>iSlot | 爆燃奇境老虎机</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="assets/islot-casino-stage.png" as="image" />
     <link rel="preload" href="assets/islot-concept.png" as="image" />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -21,10 +22,15 @@
         <a class="brand" href="#" aria-label="iSlot home">
           <span class="brand-mark">iS</span>
           <span>
-            <strong>iSlot</strong>
-            <small>纯娱乐金币场</small>
+            <strong>MYTHIC PLAYER</strong>
+            <small>Lv. 128 · iSlot</small>
           </span>
         </a>
+        <div class="coin-bank" aria-label="Coin bank">
+          <span>◉</span>
+          <strong>2,450,000,000</strong>
+          <button type="button" id="bankAddButton" aria-label="Add fantasy coins">+</button>
+        </div>
         <nav class="mode-tabs" aria-label="Theme shortcuts">
           <button class="tab is-active" data-theme-shortcut="vegas">霓虹城</button>
           <button class="tab" data-theme-shortcut="egypt">黄金埃及</button>
@@ -33,6 +39,8 @@
           <button class="tab" data-theme-shortcut="dragon">龙焰工坊</button>
         </nav>
         <div class="sound-strip">
+          <button class="icon-button menu-dot" aria-label="Daily chest">♜</button>
+          <button class="icon-button menu-dot" aria-label="Missions">♛</button>
           <button class="icon-button" id="muteButton" aria-label="Toggle sound">♪</button>
           <button class="icon-button" id="turboButton" aria-label="Toggle turbo mode">⚡</button>
         </div>
@@ -88,11 +96,36 @@
             <button class="ghost-button" id="autoButton">自动旋转</button>
             <button class="ghost-button gold" id="addCoinsButton">爽充金币</button>
           </div>
+          <div class="reward-strip" aria-label="Bonus progress">
+            <div class="reward-card">
+              <span class="reward-icon">▣</span>
+              <div>
+                <strong>Bonus ready!</strong>
+                <i><b style="width: 68%"></b></i>
+              </div>
+            </div>
+            <div class="reward-card">
+              <span class="reward-icon wheel">◈</span>
+              <div>
+                <strong>MEGA WHEEL</strong>
+                <i><b style="width: 38%"></b></i>
+              </div>
+              <small>02:15:36</small>
+            </div>
+            <div class="reward-card">
+              <span class="reward-icon chest">▰</span>
+              <div>
+                <strong>DAILY CHEST</strong>
+                <i><b style="width: 54%"></b></i>
+              </div>
+              <small>08:45:12</small>
+            </div>
+          </div>
         </section>
 
         <aside class="mission-panel">
           <div class="panel-block concept-card">
-            <img src="assets/islot-concept.png" alt="iSlot visual concept artwork" />
+            <img src="assets/islot-casino-stage.png" alt="iSlot casino stage artwork" />
             <div>
               <span>今日氛围</span>
               <strong id="currentThemeName">霓虹城</strong>

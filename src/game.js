@@ -42,6 +42,7 @@ const els = {
   spinHint: document.querySelector("#spinHint"),
   autoButton: document.querySelector("#autoButton"),
   addCoins: document.querySelector("#addCoinsButton"),
+  bankAdd: document.querySelector("#bankAddButton"),
   betDown: document.querySelector("#betDown"),
   betUp: document.querySelector("#betUp"),
   mute: document.querySelector("#muteButton"),
@@ -103,7 +104,7 @@ function renderShell() {
 function renderThemes() {
   els.themeList.innerHTML = THEMES.map(
     (theme) => `
-      <button class="theme-card ${theme.id === state.themeId ? "is-active" : ""}" data-theme-id="${theme.id}">
+      <button class="theme-card theme-${theme.id} ${theme.id === state.themeId ? "is-active" : ""}" data-theme-id="${theme.id}">
         <span class="theme-icon">${theme.icon}</span>
         <span>
           <strong>${theme.name}</strong>
@@ -580,6 +581,7 @@ function addCoins() {
 function bindEvents() {
   els.spinButton.addEventListener("click", spin);
   els.addCoins.addEventListener("click", addCoins);
+  els.bankAdd.addEventListener("click", addCoins);
   els.betDown.addEventListener("click", () => {
     playButtonSound();
     state.betIndex = Math.max(0, state.betIndex - 1);
