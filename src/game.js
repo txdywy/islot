@@ -968,15 +968,17 @@ function spawnShockwave(x, y) {
 }
 function spawnLaserSweep() {
   const theme = currentTheme();
-  const reelsRect = els.reels.getBoundingClientRect();
+  const windowEl = document.querySelector(".reel-window");
+  if (!windowEl) return;
+  const rect = windowEl.getBoundingClientRect();
   const isMobile = window.innerWidth < 768;
   const duration = isMobile ? 22 : 32;
   fx.particles.push({
     shape: "laser",
-    x: reelsRect.left,
-    y: reelsRect.top,
+    x: rect.left,
+    y: rect.top,
     vx: 0,
-    vy: reelsRect.height / duration,
+    vy: rect.height / duration,
     life: duration,
     maxLife: duration,
     size: 0,
@@ -1100,9 +1102,10 @@ function fxLoop() {
       
       const alpha = Math.max(0, p.life / p.maxLife);
       fx.ctx.save();
-      const reelsRect = els.reels.getBoundingClientRect();
-      const x1 = reelsRect.left;
-      const x2 = reelsRect.right;
+      const windowEl = document.querySelector(".reel-window");
+      const rect = windowEl ? windowEl.getBoundingClientRect() : { left: 0, right: fx.width };
+      const x1 = rect.left;
+      const x2 = rect.right;
       
       if (!isMobile) {
         fx.ctx.shadowColor = p.color;
