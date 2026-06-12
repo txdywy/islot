@@ -32,6 +32,7 @@ body {
 body {
   color: var(--text);
   background:
+    radial-gradient(circle at 50% -12%, rgba(255, 214, 107, 0.18), transparent 24rem),
     radial-gradient(circle at 16% 16%, color-mix(in srgb, var(--theme) 34%, transparent), transparent 32rem),
     radial-gradient(circle at 86% 20%, color-mix(in srgb, var(--theme-2) 30%, transparent), transparent 28rem),
     linear-gradient(135deg, #08040c 0%, #13111d 42%, #07121a 100%);
@@ -57,6 +58,7 @@ button {
   z-index: 0;
   opacity: 0.72;
   background:
+    radial-gradient(ellipse at 50% 105%, color-mix(in srgb, var(--theme) 20%, transparent), transparent 42%),
     linear-gradient(110deg, transparent 0 28%, rgba(255, 211, 94, 0.13), transparent 56%),
     linear-gradient(58deg, transparent 0 20%, color-mix(in srgb, var(--theme) 26%, transparent), transparent 60%),
     linear-gradient(145deg, transparent 10%, color-mix(in srgb, var(--theme-2) 22%, transparent), transparent 70%);
@@ -314,6 +316,7 @@ button {
   border-radius: var(--radius) var(--radius) 24px 24px;
   text-align: center;
   background:
+    repeating-linear-gradient(90deg, rgba(255, 214, 107, 0.06) 0 8px, transparent 8px 18px),
     linear-gradient(90deg, transparent, rgba(255, 214, 107, 0.18), transparent),
     rgba(15, 12, 24, 0.86);
   box-shadow: 0 0 40px rgba(255, 214, 107, 0.3);
@@ -341,12 +344,16 @@ button {
   border: 2px solid rgba(255, 214, 107, 0.44);
   border-radius: 18px;
   background:
+    radial-gradient(circle at 16% 12%, rgba(255, 255, 255, 0.22), transparent 18%),
+    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--theme-2) 24%, transparent), transparent 22%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.12), transparent 28%),
     radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--theme) 30%, transparent), transparent 42%),
     linear-gradient(135deg, rgba(18, 12, 25, 0.96), rgba(32, 21, 40, 0.9) 45%, rgba(8, 18, 26, 0.96));
   box-shadow:
     0 0 0 7px rgba(255, 255, 255, 0.03),
+    0 0 0 12px rgba(255, 214, 107, 0.06),
     0 24px 90px rgba(0, 0, 0, 0.5),
+    0 0 70px color-mix(in srgb, var(--theme) 24%, transparent),
     inset 0 0 50px rgba(255, 214, 107, 0.12);
   overflow: hidden;
 }
@@ -376,6 +383,21 @@ button {
   animation: lightMarch 1.2s linear infinite;
 }
 
+.machine-rim {
+  position: absolute;
+  z-index: 1;
+  inset: 5px;
+  border-radius: 15px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255, 214, 107, 0.46), transparent 14% 86%, rgba(255, 214, 107, 0.46)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 18% 82%, rgba(255, 214, 107, 0.24));
+  opacity: 0.52;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  padding: 2px;
+}
+
 .reel-window {
   position: relative;
   z-index: 2;
@@ -383,11 +405,34 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
   background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05), transparent 48%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 20%, transparent 74%, rgba(255, 255, 255, 0.06)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 12px),
     rgba(5, 4, 12, 0.86);
   box-shadow:
     inset 0 0 34px rgba(0, 0, 0, 0.72),
     0 0 38px color-mix(in srgb, var(--theme) 20%, transparent);
+}
+
+.reel-vignette {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.86), transparent 16%, transparent 80%, rgba(0, 0, 0, 0.78)),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.56), transparent 9%, transparent 91%, rgba(0, 0, 0, 0.56));
+  mix-blend-mode: multiply;
+}
+
+.reel-window::before {
+  content: "";
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0 44%, rgba(255, 255, 255, 0.2) 50%, transparent 56%);
+  opacity: 0.36;
 }
 
 .reels {
@@ -398,16 +443,58 @@ button {
 }
 
 .reel {
+  position: relative;
   display: grid;
   grid-template-rows: repeat(3, minmax(80px, 1fr));
   gap: clamp(8px, 1.1vw, 13px);
   min-height: clamp(272px, 38vw, 438px);
+  overflow: hidden;
+  border-radius: 10px;
   transform: translateZ(0);
 }
 
-.reel.is-spinning {
-  animation: reelBlur 180ms linear infinite;
-  animation-delay: var(--delay);
+.reel::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 16%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 28% 72%, rgba(0, 0, 0, 0.22));
+  opacity: 0.55;
+}
+
+.reel-strip {
+  display: grid;
+  gap: clamp(8px, 1.1vw, 13px);
+  will-change: transform, filter;
+}
+
+.reel.is-rolling {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 22% 78%, rgba(255, 255, 255, 0.06)),
+    rgba(0, 0, 0, 0.3);
+}
+
+.reel.is-speeding::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  inset: -20% 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0 10px,
+    color-mix(in srgb, var(--theme) 28%, transparent) 10px 12px,
+    transparent 12px 26px
+  );
+  opacity: 0.55;
+  animation: speedLines 160ms linear infinite;
+}
+
+.reel.is-stopped {
+  animation: reelStopKick 340ms ease-out;
 }
 
 .symbol {
@@ -419,10 +506,12 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius);
   background:
+    radial-gradient(circle at 50% 52%, color-mix(in srgb, var(--theme) 16%, transparent), transparent 52%),
     radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.28), transparent 34%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.18)),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.28)),
     rgba(255, 255, 255, 0.06);
   box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
     inset 0 -14px 28px rgba(0, 0, 0, 0.3),
     0 14px 30px rgba(0, 0, 0, 0.26);
 }
@@ -441,6 +530,13 @@ button {
   animation: hitPulse 850ms ease-in-out infinite;
 }
 
+.symbol.is-final {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -14px 28px rgba(0, 0, 0, 0.28),
+    0 0 22px color-mix(in srgb, var(--theme) 18%, transparent);
+}
+
 .symbol.is-hit::after {
   transform: translateX(70%);
 }
@@ -451,6 +547,7 @@ button {
   font-weight: 950;
   line-height: 1;
   text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.32),
     0 0 12px currentColor,
     0 0 26px color-mix(in srgb, var(--theme) 72%, transparent);
 }
@@ -511,6 +608,7 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius);
   background:
+    radial-gradient(circle at 72% 50%, color-mix(in srgb, var(--theme) 26%, transparent), transparent 28%),
     linear-gradient(90deg, rgba(255, 255, 255, 0.08), color-mix(in srgb, var(--theme) 20%, transparent), rgba(255, 255, 255, 0.06)),
     rgba(0, 0, 0, 0.35);
 }
@@ -536,6 +634,14 @@ button {
 .win-banner.is-mega {
   border-color: var(--gold);
   box-shadow: 0 0 60px color-mix(in srgb, var(--theme) 45%, transparent);
+}
+
+.machine.is-small-hit {
+  animation: prizeGlow 800ms ease;
+}
+
+.machine.is-mega-hit {
+  animation: megaPrizeGlow 1500ms ease;
 }
 
 .control-deck {
@@ -586,10 +692,12 @@ button {
   border-radius: var(--radius);
   color: #160807;
   background:
+    radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.46), transparent 32%),
     radial-gradient(circle at 50% 0%, #fff6c0, transparent 40%),
     linear-gradient(135deg, #ffed85, #ff9c21 44%, #ff2f6e 76%, #832cff);
   box-shadow:
     0 0 30px rgba(255, 195, 55, 0.58),
+    0 0 55px color-mix(in srgb, var(--theme) 30%, transparent),
     inset 0 -8px 20px rgba(82, 10, 19, 0.35);
   cursor: pointer;
   overflow: hidden;
@@ -613,6 +721,7 @@ button {
 .spin-button span {
   font-size: clamp(26px, 3vw, 38px);
   font-weight: 950;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.38);
 }
 
 .spin-button small {
@@ -791,6 +900,26 @@ button {
   }
 }
 
+@keyframes speedLines {
+  to {
+    transform: translateY(38px);
+  }
+}
+
+@keyframes reelStopKick {
+  0% {
+    transform: translateY(-7px) scaleY(1.035);
+    filter: brightness(1.35);
+  }
+  52% {
+    transform: translateY(5px) scaleY(0.985);
+  }
+  100% {
+    transform: translateY(0) scaleY(1);
+    filter: brightness(1);
+  }
+}
+
 @keyframes hitPulse {
   50% {
     transform: scale(1.035);
@@ -812,6 +941,46 @@ button {
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes prizeGlow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  45% {
+    filter: brightness(1.35) saturate(1.28);
+    box-shadow:
+      0 0 0 7px rgba(255, 255, 255, 0.04),
+      0 0 0 12px rgba(255, 214, 107, 0.08),
+      0 28px 100px rgba(0, 0, 0, 0.55),
+      0 0 95px color-mix(in srgb, var(--theme) 42%, transparent),
+      inset 0 0 65px rgba(255, 214, 107, 0.18);
+  }
+}
+
+@keyframes megaPrizeGlow {
+  0%,
+  100% {
+    filter: brightness(1) saturate(1);
+  }
+  18% {
+    transform: scale(1.012);
+  }
+  38% {
+    filter: brightness(1.8) saturate(1.55);
+    box-shadow:
+      0 0 0 7px rgba(255, 255, 255, 0.06),
+      0 0 0 13px rgba(255, 214, 107, 0.18),
+      0 32px 115px rgba(0, 0, 0, 0.56),
+      0 0 130px color-mix(in srgb, var(--theme) 66%, transparent),
+      0 0 190px rgba(255, 214, 107, 0.28),
+      inset 0 0 90px rgba(255, 214, 107, 0.28);
+  }
+  64% {
+    transform: scale(1);
+    filter: brightness(1.18) saturate(1.2);
   }
 }
 
@@ -969,6 +1138,10 @@ button {
   .reel {
     min-width: 0;
     min-height: 236px;
+    gap: 6px;
+  }
+
+  .reel-strip {
     gap: 6px;
   }
 

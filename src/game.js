@@ -13,6 +13,14 @@ const state = {
   autoTimer: 0,
 };
 
+const audio = {
+  ctx: null,
+  master: null,
+  spinOsc: null,
+  spinGain: null,
+  noiseBuffer: null,
+};
+
 const els = {
   shell: document.querySelector("#gameShell"),
   machine: document.querySelector("#machine"),
@@ -50,6 +58,7 @@ const fx = {
 };
 
 const format = new Intl.NumberFormat("zh-CN");
+const easeOutBack = "cubic-bezier(.16, 1.22, .38, 1)";
 
 function currentTheme() {
   return THEMES.find((theme) => theme.id === state.themeId) || THEMES[0];
@@ -127,24 +136,46 @@ function randomBoard(theme) {
   return Array.from({ length: 5 }, () => Array.from({ length: 3 }, () => weightedSymbol(theme)));
 }
 
+function spinStrip(theme, finalColumn) {
+  const stripLength = state.turbo ? 18 : 28;
+  return [...Array.from({ length: stripLength }, () => weightedSymbol(theme)), ...finalColumn];
+}
+
+function symbolMarkup(symbol, extraClass = "") {
+  return `
+    <div class="symbol symbol-${symbol.id} ${extraClass}" data-symbol="${symbol.id}">
+      <span class="glyph">${symbol.glyph}</span>
+      <small>${symbol.label}</small>
+    </div>
+  `;
+}
+
 function renderBoard(board, spinningColumns = []) {
   els.reels.innerHTML = board
     .map(
       (column, colIndex) => `
         <div class="reel ${spinningColumns.includes(colIndex) ? "is-spinning" : ""}" style="--delay:${colIndex * 90}ms">
           ${column
-            .map(
-              (symbol) => `
-                <div class="symbol symbol-${symbol.id}" data-symbol="${symbol.id}">
-                  <span class="glyph">${symbol.glyph}</span>
-                  <small>${symbol.label}</small>
-                </div>
-              `,
-            )
+            .map((symbol) => symbolMarkup(symbol))
             .join("")}
         </div>
       `,
     )
+    .join("");
+}
+
+function renderSpinStrips(finalBoard, theme) {
+  els.reels.innerHTML = finalBoard
+    .map((column, colIndex) => {
+      const strip = spinStrip(theme, column);
+      return `
+        <div class="reel is-rolling" style="--delay:${colIndex * 90}ms">
+          <div class="reel-strip">
+            ${strip.map((symbol, index) => symbolMarkup(symbol, index >= strip.length - 3 ? "is-final" : "")).join("")}
+          </div>
+        </div>
+      `;
+    })
     .join("");
 }
 
@@ -190,6 +221,151 @@ function resizeCanvas() {
   els.canvas.width = Math.floor(fx.width * ratio);
   els.canvas.height = Math.floor(fx.height * ratio);
   fx.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+}
+
+function ensureAudio() {
+  if (state.muted) return null;
+  if (!audio.ctx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    audio.ctx = new AudioContext();
+    audio.master = audio.ctx.createGain();
+    audio.master.gain.value = 0.32;
+    audio.master.connect(audio.ctx.destination);
+    audio.noiseBuffer = audio.ctx.createBuffer(1, audio.ctx.sampleRate * 0.5, audio.ctx.sampleRate);
+    const data = audio.noiseBuffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+  }
+  if (audio.ctx.state === "suspended") audio.ctx.resume();
+  return audio.ctx;
+}
+
+function tone(freq, duration = 0.12, type = "sine", volume = 0.25, when = 0) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const start = ctx.currentTime + when;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.connect(gain);
+  gain.connect(audio.master);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+}
+
+function noiseHit(duration = 0.12, volume = 0.2, cutoff = 1400, when = 0) {
+  const ctx = ensureAudio();
+  if (!ctx || !audio.noiseBuffer) return;
+  const start = ctx.currentTime + when;
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  source.buffer = audio.noiseBuffer;
+  filter.type = "bandpass";
+  filter.frequency.setValueAtTime(cutoff, start);
+  filter.Q.value = 8;
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(audio.master);
+  source.start(start);
+  source.stop(start + duration);
+}
+
+function startSpinSound() {
+  const ctx = ensureAudio();
+  if (!ctx || audio.spinOsc) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(55, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 150 : 110, ctx.currentTime + 0.28);
+  filter.type = "lowpass";
+  filter.frequency.value = 740;
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.08);
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audio.master);
+  osc.start();
+  audio.spinOsc = osc;
+  audio.spinGain = gain;
+  noiseHit(0.18, 0.18, 900);
+}
+
+function stopSpinSound() {
+  const ctx = audio.ctx;
+  if (!ctx || !audio.spinOsc || !audio.spinGain) return;
+  audio.spinGain.gain.cancelScheduledValues(ctx.currentTime);
+  audio.spinGain.gain.setValueAtTime(Math.max(audio.spinGain.gain.value, 0.001), ctx.currentTime);
+  audio.spinGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+  audio.spinOsc.stop(ctx.currentTime + 0.22);
+  audio.spinOsc = null;
+  audio.spinGain = null;
+}
+
+function playButtonSound() {
+  tone(420, 0.07, "triangle", 0.18);
+  tone(780, 0.08, "sine", 0.11, 0.035);
+}
+
+function playReelStop(index) {
+  tone(190 + index * 34, 0.055, "square", 0.16);
+  noiseHit(0.07, 0.16, 1200 + index * 220);
+}
+
+function playWinSound(mega = false) {
+  const notes = mega ? [523, 659, 784, 1046, 1318] : [392, 523, 659, 784];
+  notes.forEach((note, index) => tone(note, 0.16 + index * 0.025, "triangle", mega ? 0.18 : 0.13, index * 0.075));
+  if (mega) {
+    noiseHit(0.45, 0.22, 2400, 0.08);
+    tone(82, 0.45, "sawtooth", 0.12, 0.02);
+  }
+}
+
+async function animateReels(finalBoard, theme) {
+  renderSpinStrips(finalBoard, theme);
+  const reels = [...els.reels.querySelectorAll(".reel")];
+  const baseDuration = state.turbo ? 520 : 900;
+  const stopGap = state.turbo ? 110 : 210;
+
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
+  const animations = reels.map((reel, index) => {
+    const strip = reel.querySelector(".reel-strip");
+    const travel = Math.max(0, strip.scrollHeight - reel.clientHeight);
+    strip.style.transform = "translate3d(0, 0, 0)";
+    reel.classList.add("is-speeding");
+    const animation = strip.animate(
+      [
+        { transform: "translate3d(0, 0, 0)", filter: "blur(0px) brightness(1)" },
+        { transform: `translate3d(0, -${Math.max(0, travel - 28)}px, 0)`, filter: "blur(7px) brightness(1.55)", offset: 0.82 },
+        { transform: `translate3d(0, -${travel + 18}px, 0)`, filter: "blur(2px) brightness(1.22)", offset: 0.92 },
+        { transform: `translate3d(0, -${travel}px, 0)`, filter: "blur(0px) brightness(1)" },
+      ],
+      {
+        duration: baseDuration + index * stopGap,
+        easing: easeOutBack,
+        fill: "forwards",
+      },
+    );
+    animation.finished.then(() => {
+      reel.classList.remove("is-speeding");
+      reel.classList.add("is-stopped");
+      playReelStop(index);
+      setTimeout(() => reel.classList.remove("is-stopped"), 360);
+    });
+    return animation.finished;
+  });
+
+  await Promise.all(animations);
 }
 
 function spawnBurst(kind, amount = 120) {
@@ -273,13 +449,17 @@ function pulseWin(result, spend) {
     els.winTitle.textContent = mega ? "MEGA BLAST" : "WIN";
     els.winAmount.textContent = `+${format.format(result.total)}`;
     els.winBanner.classList.add(mega ? "is-mega" : "is-win");
+    els.machine.classList.add(mega ? "is-mega-hit" : "is-small-hit");
     els.shell.classList.add("screen-shake");
     setTimeout(() => els.shell.classList.remove("screen-shake"), 700);
+    setTimeout(() => els.machine.classList.remove("is-mega-hit", "is-small-hit"), mega ? 1600 : 900);
     spawnBurst(theme.effect, mega ? 260 : 130);
+    playWinSound(mega);
     toast(mega ? "爆炸大奖！" : "中奖！", `${result.wins.length} 条高光 · 净收益 ${format.format(net)}`);
   } else {
     els.winTitle.textContent = "再来一把";
     els.winAmount.textContent = "LUCK CHARGING";
+    tone(160, 0.08, "triangle", 0.08);
   }
 
   if (result.freeSpinsWon > 0) {
@@ -302,13 +482,14 @@ function highlightWins(board, wins) {
     }
     const line = PAYLINES[win.lineIndex];
     for (let col = 0; col < win.count; col += 1) {
-      reels[col]?.children[line[col]]?.classList.add("is-hit");
+      reels[col]?.querySelectorAll(".symbol")?.[line[col]]?.classList.add("is-hit");
     }
   }
 }
 
 async function spin() {
   if (state.spinning) return;
+  playButtonSound();
   const bet = currentBet();
   const lineCost = bet * PAYLINES.length;
   const isFree = state.freeSpins > 0;
@@ -329,12 +510,10 @@ async function spin() {
   else state.balance -= lineCost;
   renderShell();
 
-  const spinDuration = state.turbo ? 520 : 1180;
-  const interval = window.setInterval(() => renderBoard(randomBoard(theme), [0, 1, 2, 3, 4]), 75);
-  await new Promise((resolve) => setTimeout(resolve, spinDuration));
-  window.clearInterval(interval);
-
   const board = randomBoard(theme);
+  startSpinSound();
+  await animateReels(board, theme);
+  stopSpinSound();
   renderBoard(board, []);
   const result = evaluate(board, bet);
   state.balance += result.total;
@@ -355,6 +534,7 @@ async function spin() {
 }
 
 function setTheme(themeId) {
+  playButtonSound();
   state.themeId = themeId;
   state.heat = Math.max(0, state.heat - 1);
   renderThemes();
@@ -366,6 +546,7 @@ function setTheme(themeId) {
 }
 
 function addCoins() {
+  playButtonSound();
   const gift = 50000 + Math.floor(Math.random() * 8) * 10000;
   state.balance += gift;
   toast("金币到账", `+${format.format(gift)}，放心爽玩。`);
@@ -378,29 +559,35 @@ function bindEvents() {
   els.spinButton.addEventListener("click", spin);
   els.addCoins.addEventListener("click", addCoins);
   els.betDown.addEventListener("click", () => {
+    playButtonSound();
     state.betIndex = Math.max(0, state.betIndex - 1);
     renderShell();
     saveState();
   });
   els.betUp.addEventListener("click", () => {
+    playButtonSound();
     state.betIndex = Math.min(BET_STEPS.length - 1, state.betIndex + 1);
     renderShell();
     saveState();
   });
   els.autoButton.addEventListener("click", () => {
+    playButtonSound();
     state.auto = !state.auto;
     renderShell();
     if (state.auto) spin();
     else window.clearTimeout(state.autoTimer);
   });
   els.turbo.addEventListener("click", () => {
+    playButtonSound();
     state.turbo = !state.turbo;
     renderShell();
   });
   els.mute.addEventListener("click", () => {
     state.muted = !state.muted;
+    if (state.muted) stopSpinSound();
+    else playButtonSound();
     renderShell();
-    toast(state.muted ? "静音模式" : "音效氛围", "当前版本使用视觉反馈，后续可接 WebAudio。");
+    toast(state.muted ? "静音模式" : "老虎机音效已开启", state.muted ? "已停止转轴和中奖音效。" : "包含滚轴、停轴、按钮、大奖合成音效。");
   });
   els.themeList.addEventListener("click", (event) => {
     const card = event.target.closest("[data-theme-id]");
