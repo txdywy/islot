@@ -349,8 +349,8 @@ function resizeCanvas() {
 function _doResize() {
   const isMobile = window.innerWidth < 768;
   const ratio = Math.min(isMobile ? 1.5 : 2, window.devicePixelRatio || 1);
-  fx.width = window.innerWidth;
-  fx.height = window.innerHeight;
+  fx.width = document.documentElement.clientWidth;
+  fx.height = document.documentElement.clientHeight;
   els.canvas.width = Math.floor(fx.width * ratio);
   els.canvas.height = Math.floor(fx.height * ratio);
   fx.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -906,11 +906,15 @@ function unlockTheme(theme) {
 
 function paylineCanvasPoints(reels, line, count = 5) {
   const points = [];
+  const canvasRect = els.canvas.getBoundingClientRect();
   for (let col = 0; col < count; col += 1) {
     const symbol = reels[col]?.querySelectorAll(".symbol")?.[line[col]];
     if (symbol) {
       const rect = symbol.getBoundingClientRect();
-      points.push({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      points.push({
+        x: rect.left + rect.width / 2 - canvasRect.left,
+        y: rect.top + rect.height / 2 - canvasRect.top
+      });
     }
   }
   return points;
@@ -982,12 +986,13 @@ function spawnLaserSweep() {
   const windowEl = document.querySelector(".reel-window");
   if (!windowEl) return;
   const rect = windowEl.getBoundingClientRect();
+  const canvasRect = els.canvas.getBoundingClientRect();
   const isMobile = window.innerWidth < 768;
   const duration = isMobile ? 22 : 32;
   fx.particles.push({
     shape: "laser",
-    x: rect.left,
-    y: rect.top,
+    x: rect.left - canvasRect.left,
+    y: rect.top - canvasRect.top,
     vx: 0,
     vy: rect.height / duration,
     life: duration,
@@ -1060,6 +1065,7 @@ function fxLoop() {
   
   const isMobile = window.innerWidth < 768;
   fx.ctx.clearRect(0, 0, fx.width, fx.height);
+  const canvasRect = els.canvas.getBoundingClientRect();
   
   // 1. Draw lightning for anticipating reels
   if (!isMobile || Math.random() < 0.85) {
@@ -1068,8 +1074,12 @@ function fxLoop() {
       const rect = reel.getBoundingClientRect();
       const theme = currentTheme();
       const lightningColor = theme.second || theme.accent;
-      drawLightning(fx.ctx, rect.left, rect.top, rect.left, rect.bottom, lightningColor, 3, isMobile);
-      drawLightning(fx.ctx, rect.right, rect.top, rect.right, rect.bottom, lightningColor, 3, isMobile);
+      const leftX = rect.left - canvasRect.left;
+      const rightX = rect.right - canvasRect.left;
+      const topY = rect.top - canvasRect.top;
+      const bottomY = rect.bottom - canvasRect.top;
+      drawLightning(fx.ctx, leftX, topY, leftX, bottomY, lightningColor, 3, isMobile);
+      drawLightning(fx.ctx, rightX, topY, rightX, bottomY, lightningColor, 3, isMobile);
     });
   }
   
@@ -1081,8 +1091,8 @@ function fxLoop() {
     for (let j = 0; j < spawnCount; j += 1) {
       if (Math.random() < 0.45) {
         fx.particles.push({
-          x: reelsRect.left + Math.random() * reelsRect.width,
-          y: reelsRect.bottom - Math.random() * 10,
+          x: reelsRect.left - canvasRect.left + Math.random() * reelsRect.width,
+          y: reelsRect.bottom - canvasRect.top - Math.random() * 10,
           vx: (Math.random() - 0.5) * (isMobile ? 2.5 : 4.5),
           vy: -3.5 - Math.random() * (isMobile ? 3.5 : 6),
           life: isMobile ? 18 + Math.random() * 15 : 28 + Math.random() * 25,
@@ -1114,9 +1124,9 @@ function fxLoop() {
       const alpha = Math.max(0, p.life / p.maxLife);
       fx.ctx.save();
       const windowEl = document.querySelector(".reel-window");
-      const rect = windowEl ? windowEl.getBoundingClientRect() : { left: 0, right: fx.width };
-      const x1 = rect.left;
-      const x2 = rect.right;
+      const rect = windowEl ? windowEl.getBoundingClientRect() : { left: canvasRect.left, right: canvasRect.right };
+      const x1 = rect.left - canvasRect.left;
+      const x2 = rect.right - canvasRect.left;
       
       if (!isMobile) {
         fx.ctx.shadowColor = p.color;
