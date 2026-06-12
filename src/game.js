@@ -6,6 +6,8 @@ const state = {
   betIndex: Number(localStorage.getItem("islot-bet-index") || 2),
   freeSpins: Number(localStorage.getItem("islot-free-spins") || 0),
   heat: Number(localStorage.getItem("islot-heat") || 0),
+  unlockedThemes: readStoredJson("islot-unlocked-themes", ["vegas"]),
+  themeProgress: readStoredJson("islot-theme-progress", {}),
   spinning: false,
   turbo: false,
   muted: false,
@@ -18,6 +20,10 @@ const audio = {
   master: null,
   spinOsc: null,
   spinGain: null,
+  spinNoise: null,
+  spinNoiseGain: null,
+  tickTimer: 0,
+  tickCount: 0,
   noiseBuffer: null,
 };
 
@@ -61,6 +67,18 @@ const fx = {
 
 const format = new Intl.NumberFormat("zh-CN");
 const reelStopEase = "cubic-bezier(.12, .78, .12, 1)";
+const THEME_UNLOCK_TARGET = 100;
+
+if (!state.unlockedThemes.includes("vegas")) state.unlockedThemes.unshift("vegas");
+if (!state.unlockedThemes.includes(state.themeId)) state.themeId = state.unlockedThemes[0];
+
+function readStoredJson(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function currentTheme() {
   return THEMES.find((theme) => theme.id === state.themeId) || THEMES[0];
@@ -76,6 +94,27 @@ function saveState() {
   localStorage.setItem("islot-bet-index", String(state.betIndex));
   localStorage.setItem("islot-free-spins", String(state.freeSpins));
   localStorage.setItem("islot-heat", String(state.heat));
+  localStorage.setItem("islot-unlocked-themes", JSON.stringify(state.unlockedThemes));
+  localStorage.setItem("islot-theme-progress", JSON.stringify(state.themeProgress));
+}
+
+function themeIndex(themeId) {
+  return THEMES.findIndex((theme) => theme.id === themeId);
+}
+
+function isThemeUnlocked(themeId) {
+  return state.unlockedThemes.includes(themeId);
+}
+
+function themeProgress(themeId) {
+  if (isThemeUnlocked(THEMES.at(-1)?.id) && themeId === THEMES.at(-1)?.id) return THEME_UNLOCK_TARGET;
+  return Math.min(THEME_UNLOCK_TARGET, Number(state.themeProgress[themeId] || 0));
+}
+
+function nextLockedTheme(themeId = state.themeId) {
+  const index = themeIndex(themeId);
+  if (index < 0) return null;
+  return THEMES.slice(index + 1).find((theme) => !isThemeUnlocked(theme.id)) || null;
 }
 
 function renderShell() {
@@ -94,25 +133,36 @@ function renderShell() {
   els.turbo.classList.toggle("is-active", state.turbo);
   els.mute.classList.toggle("is-active", state.muted);
   els.heatFill.style.width = `${Math.min(100, state.heat * 14)}%`;
-  els.heatText.textContent =
-    state.heat >= 6 ? "热度拉满，下一次大奖会非常夸张。" : state.heat > 0 ? `连胜 ${state.heat} 层，特效倍率正在升温。` : "等待第一把爆燃。";
+  const progress = themeProgress(theme.id);
+  const nextTheme = nextLockedTheme(theme.id);
+  els.heatFill.style.width = `${progress}%`;
+  els.heatText.textContent = nextTheme
+    ? `${theme.name} 探索进度 ${Math.floor(progress)}%，满格解锁「${nextTheme.name}」。`
+    : "所有主题已解锁，继续冲击大奖和免费局。";
 
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.classList.toggle("is-active", tab.dataset.themeShortcut === theme.id);
+    tab.classList.toggle("is-locked", !isThemeUnlocked(tab.dataset.themeShortcut));
   });
 }
 
 function renderThemes() {
   els.themeList.innerHTML = THEMES.map(
-    (theme) => `
-      <button class="theme-card theme-${theme.id} ${theme.id === state.themeId ? "is-active" : ""}" data-theme-id="${theme.id}">
+    (theme, index) => {
+      const locked = !isThemeUnlocked(theme.id);
+      const previous = THEMES[index - 1];
+      const progress = themeProgress(theme.id);
+      const unlockHint = locked ? `通关 ${previous?.name || "前置主题"} 解锁` : progress >= THEME_UNLOCK_TARGET ? "已解锁" : `进度 ${Math.floor(progress)}%`;
+      return `
+      <button class="theme-card theme-${theme.id} ${theme.id === state.themeId ? "is-active" : ""} ${locked ? "is-locked" : ""}" data-theme-id="${theme.id}" ${locked ? "aria-disabled=\"true\"" : ""}>
         <span class="theme-icon">${theme.icon}</span>
         <span>
           <strong>${theme.name}</strong>
-          <small>${theme.subtitle}</small>
+          <small>${unlockHint}</small>
         </span>
       </button>
-    `,
+    `;
+    },
   ).join("");
 }
 
@@ -139,7 +189,7 @@ function randomBoard(theme) {
 }
 
 function spinStrip(theme, finalColumn) {
-  const stripLength = state.turbo ? 14 : 22;
+  const stripLength = state.turbo ? 18 : 30;
   return [...Array.from({ length: stripLength }, () => weightedSymbol(theme)), ...finalColumn];
 }
 
@@ -287,31 +337,70 @@ function startSpinSound() {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
+  const noise = ctx.createBufferSource();
+  const noiseFilter = ctx.createBiquadFilter();
+  const noiseGain = ctx.createGain();
   osc.type = "sawtooth";
   osc.frequency.setValueAtTime(55, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 150 : 110, ctx.currentTime + 0.28);
+  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 160 : 118, ctx.currentTime + 0.32);
   filter.type = "lowpass";
   filter.frequency.value = 740;
   gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.08);
   osc.connect(filter);
   filter.connect(gain);
   gain.connect(audio.master);
+
+  noise.buffer = audio.noiseBuffer;
+  noise.loop = true;
+  noiseFilter.type = "bandpass";
+  noiseFilter.frequency.setValueAtTime(state.turbo ? 1500 : 1150, ctx.currentTime);
+  noiseFilter.Q.value = 1.2;
+  noiseGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  noiseGain.gain.exponentialRampToValueAtTime(state.turbo ? 0.065 : 0.09, ctx.currentTime + 0.12);
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(audio.master);
+
   osc.start();
+  noise.start();
   audio.spinOsc = osc;
   audio.spinGain = gain;
-  noiseHit(0.18, 0.18, 900);
+  audio.spinNoise = noise;
+  audio.spinNoiseGain = noiseGain;
+  audio.tickCount = 0;
+  window.clearInterval(audio.tickTimer);
+  audio.tickTimer = window.setInterval(playSpinTick, state.turbo ? 58 : 72);
+  noiseHit(0.18, 0.16, 900);
 }
 
 function stopSpinSound() {
   const ctx = audio.ctx;
-  if (!ctx || !audio.spinOsc || !audio.spinGain) return;
-  audio.spinGain.gain.cancelScheduledValues(ctx.currentTime);
-  audio.spinGain.gain.setValueAtTime(Math.max(audio.spinGain.gain.value, 0.001), ctx.currentTime);
-  audio.spinGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
-  audio.spinOsc.stop(ctx.currentTime + 0.22);
+  window.clearInterval(audio.tickTimer);
+  audio.tickTimer = 0;
+  if (!ctx) return;
+  if (audio.spinOsc && audio.spinGain) {
+    audio.spinGain.gain.cancelScheduledValues(ctx.currentTime);
+    audio.spinGain.gain.setValueAtTime(Math.max(audio.spinGain.gain.value, 0.001), ctx.currentTime);
+    audio.spinGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    audio.spinOsc.stop(ctx.currentTime + 0.22);
+  }
+  if (audio.spinNoise && audio.spinNoiseGain) {
+    audio.spinNoiseGain.gain.cancelScheduledValues(ctx.currentTime);
+    audio.spinNoiseGain.gain.setValueAtTime(Math.max(audio.spinNoiseGain.gain.value, 0.001), ctx.currentTime);
+    audio.spinNoiseGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+    audio.spinNoise.stop(ctx.currentTime + 0.24);
+  }
   audio.spinOsc = null;
   audio.spinGain = null;
+  audio.spinNoise = null;
+  audio.spinNoiseGain = null;
+}
+
+function playSpinTick() {
+  audio.tickCount += 1;
+  const pitch = 720 + (audio.tickCount % 7) * 38;
+  tone(pitch, 0.026, "square", audio.tickCount % 3 === 0 ? 0.034 : 0.022);
 }
 
 function playButtonSound() {
@@ -320,17 +409,17 @@ function playButtonSound() {
 }
 
 function playReelStop(index) {
-  tone(520 + index * 92, 0.045, "triangle", 0.14);
-  tone(1040 + index * 120, 0.04, "sine", 0.07, 0.018);
-  noiseHit(0.055, 0.11, 1700 + index * 260);
+  tone(520 + index * 96, 0.05, "triangle", 0.15);
+  tone(1040 + index * 135, 0.045, "sine", 0.08, 0.018);
+  noiseHit(0.065, 0.12, 1700 + index * 280);
 }
 
 function playCoinCascade(count = 10, start = 0) {
   const notes = [988, 1175, 1318, 1568, 1760, 2093];
   for (let i = 0; i < count; i += 1) {
-    const delay = start + i * 0.038;
-    tone(notes[i % notes.length] * (i % 3 === 0 ? 0.5 : 1), 0.07, i % 2 ? "triangle" : "sine", 0.085, delay);
-    if (i % 2 === 0) noiseHit(0.035, 0.035, 3200 + i * 90, delay);
+    const delay = start + i * 0.031;
+    tone(notes[i % notes.length] * (i % 4 === 0 ? 0.5 : 1), 0.075, i % 2 ? "triangle" : "sine", 0.092, delay);
+    if (i % 2 === 0) noiseHit(0.038, 0.04, 3200 + i * 95, delay);
   }
 }
 
@@ -353,8 +442,10 @@ function playWinSound(mega = false) {
 async function animateReels(finalBoard, theme) {
   renderSpinStrips(finalBoard, theme);
   const reels = [...els.reels.querySelectorAll(".reel")];
-  const baseDuration = state.turbo ? 520 : 900;
-  const stopGap = state.turbo ? 110 : 210;
+  const baseDuration = state.turbo ? 760 : 1320;
+  const stopGap = state.turbo ? 135 : 330;
+  const scatterCount = finalBoard.flat().filter((symbol) => symbol.id === "scatter").length;
+  els.machine.classList.add("is-reel-spinning");
 
   await new Promise((resolve) => requestAnimationFrame(resolve));
 
@@ -377,8 +468,12 @@ async function animateReels(finalBoard, theme) {
         fill: "forwards",
       },
     );
+    if (scatterCount >= 2 && index >= 3 && !state.turbo) {
+      window.setTimeout(() => reel.classList.add("is-anticipating"), baseDuration + (index - 2) * stopGap - 260);
+    }
     animation.finished.then(() => {
       reel.classList.remove("is-speeding");
+      reel.classList.remove("is-anticipating");
       reel.classList.add("is-stopped");
       playReelStop(index);
       setTimeout(() => reel.classList.remove("is-stopped"), 360);
@@ -387,6 +482,7 @@ async function animateReels(finalBoard, theme) {
   });
 
   await Promise.all(animations);
+  els.machine.classList.remove("is-reel-spinning");
 }
 
 function spawnBurst(kind, amount = 120) {
@@ -421,6 +517,82 @@ function spawnBurst(kind, amount = 120) {
   if (fx.particles.length > 420) {
     fx.particles.splice(0, fx.particles.length - 420);
   }
+}
+
+function spawnCoinShower(mega = false) {
+  const amount = mega ? 260 : 130;
+  const colors = ["#fff4a8", "#ffd45a", "#ff981f", "#ffffff", currentTheme().accent];
+  for (let i = 0; i < amount; i += 1) {
+    const fromTop = Math.random() > 0.34;
+    fx.particles.push({
+      x: fromTop ? Math.random() * fx.width : fx.width * (0.28 + Math.random() * 0.44),
+      y: fromTop ? -30 - Math.random() * 240 : fx.height * (0.25 + Math.random() * 0.22),
+      vx: (Math.random() - 0.5) * (fromTop ? 3.6 : 12),
+      vy: fromTop ? 3 + Math.random() * 7 : -6 - Math.random() * 7,
+      life: mega ? 105 + Math.random() * 90 : 80 + Math.random() * 60,
+      maxLife: mega ? 150 : 110,
+      size: 4 + Math.random() * (mega ? 9 : 7),
+      color: colors[Math.floor(Math.random() * colors.length)],
+      shape: Math.random() > 0.18 ? "coin" : "spark",
+      gravity: fromTop ? 0.12 : 0.2,
+      spin: Math.random() * 8,
+    });
+  }
+  if (fx.particles.length > 520) {
+    fx.particles.splice(0, fx.particles.length - 520);
+  }
+}
+
+function showWinSplash(amount, mega) {
+  const node = document.createElement("div");
+  node.className = `win-splash ${mega ? "is-mega" : ""}`;
+  node.innerHTML = `<span>${mega ? "MEGA WIN" : "BIG WIN"}</span><strong>+${format.format(amount)}</strong>`;
+  document.body.append(node);
+  window.setTimeout(() => node.classList.add("is-leaving"), mega ? 1700 : 1250);
+  window.setTimeout(() => node.remove(), mega ? 2300 : 1800);
+}
+
+function showUnlockSplash(theme) {
+  const node = document.createElement("div");
+  node.className = "win-splash unlock-splash is-mega";
+  node.innerHTML = `<span>NEW STAGE UNLOCKED</span><strong>${theme.name}</strong><em>${theme.subtitle}</em>`;
+  document.body.append(node);
+  window.setTimeout(() => node.classList.add("is-leaving"), 2600);
+  window.setTimeout(() => node.remove(), 3300);
+}
+
+function awardThemeProgress(result) {
+  const theme = currentTheme();
+  const nextTheme = nextLockedTheme(theme.id);
+  if (!nextTheme) return;
+
+  const mega = result.total >= currentBet() * 250 || result.wins.some((win) => win.count >= 5);
+  const earned =
+    7 +
+    result.wins.length * 7 +
+    (result.total > 0 ? 8 : 0) +
+    result.freeSpinsWon * 4 +
+    (mega ? 25 : 0);
+  const current = themeProgress(theme.id);
+  const nextProgress = Math.min(THEME_UNLOCK_TARGET, current + earned);
+  state.themeProgress[theme.id] = nextProgress;
+
+  if (current < THEME_UNLOCK_TARGET && nextProgress >= THEME_UNLOCK_TARGET) {
+    unlockTheme(nextTheme);
+  }
+}
+
+function unlockTheme(theme) {
+  if (state.unlockedThemes.includes(theme.id)) return;
+  state.unlockedThemes.push(theme.id);
+  state.themeProgress[theme.id] = 0;
+  showUnlockSplash(theme);
+  toast("新关卡解锁！", `「${theme.name}」已经开放，点击主题卡进入。`);
+  spawnBurst(theme.effect, 340);
+  spawnCoinShower(true);
+  playFreeSpinSound();
+  renderThemes();
+  renderShell();
 }
 
 function fxLoop() {
@@ -478,6 +650,8 @@ function pulseWin(result, spend) {
     setTimeout(() => els.shell.classList.remove("screen-shake"), 700);
     setTimeout(() => els.machine.classList.remove("is-mega-hit", "is-small-hit"), mega ? 1600 : 900);
     spawnBurst(theme.effect, mega ? 260 : 130);
+    spawnCoinShower(mega);
+    showWinSplash(result.total, mega);
     playWinSound(mega);
     toast(mega ? "爆炸大奖！" : "中奖！", `${result.wins.length} 条高光 · 净收益 ${format.format(net)}`);
   } else {
@@ -601,6 +775,7 @@ async function spin() {
   state.balance += result.total;
   state.freeSpins += result.freeSpinsWon;
   state.heat = result.total > 0 ? Math.min(7, state.heat + 1) : Math.max(0, state.heat - 1);
+  awardThemeProgress(result);
   state.spinning = false;
   els.spinButton.disabled = false;
   els.machine.classList.remove("is-armed");
@@ -616,6 +791,13 @@ async function spin() {
 }
 
 function setTheme(themeId) {
+  if (!isThemeUnlocked(themeId)) {
+    const target = THEMES.find((theme) => theme.id === themeId);
+    const previous = THEMES[themeIndex(themeId) - 1];
+    toast("关卡尚未解锁", `先把「${previous?.name || "前置关卡"}」进度打满，再开启「${target?.name || "新关卡"}」。`);
+    spawnBurst("goldstorm", 40);
+    return;
+  }
   playButtonSound();
   state.themeId = themeId;
   state.heat = Math.max(0, state.heat - 1);

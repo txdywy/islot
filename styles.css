@@ -257,6 +257,11 @@ button {
   background: linear-gradient(135deg, #fff0a7, #ffb032 42%, #cf171e);
 }
 
+.tab.is-locked {
+  opacity: 0.46;
+  filter: grayscale(0.7);
+}
+
 .icon-button {
   display: grid;
   width: 50px;
@@ -343,6 +348,31 @@ button {
     radial-gradient(circle at 18% 45%, color-mix(in srgb, var(--theme) 48%, transparent), transparent 64%),
     rgba(8, 7, 12, 0.92);
   box-shadow: 0 0 22px color-mix(in srgb, var(--theme) 38%, transparent), inset 0 0 28px rgba(255, 235, 154, 0.16);
+}
+
+.theme-card.is-locked {
+  opacity: 0.58;
+  filter: grayscale(0.82);
+  cursor: not-allowed;
+}
+
+.theme-card.is-locked::after {
+  content: "LOCKED";
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 214, 107, 0.42);
+  border-radius: 999px;
+  color: #ffe6a1;
+  background: rgba(0, 0, 0, 0.56);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.theme-card {
+  position: relative;
 }
 
 .theme-egypt {
@@ -1170,6 +1200,79 @@ button {
   animation: armedGlow 560ms ease-in-out infinite alternate;
 }
 
+.machine.is-reel-spinning .machine-rim {
+  opacity: 0.76;
+  animation: rimHot 620ms linear infinite;
+}
+
+.reel.is-anticipating {
+  animation: anticipationPulse 280ms ease-in-out infinite alternate;
+}
+
+.win-splash {
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  top: 43%;
+  display: grid;
+  min-width: min(620px, calc(100vw - 28px));
+  place-items: center;
+  padding: 20px 28px;
+  border: 2px solid rgba(255, 236, 145, 0.78);
+  border-radius: 14px;
+  color: #fff3ac;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.28), transparent 34%),
+    linear-gradient(180deg, rgba(106, 8, 12, 0.92), rgba(18, 5, 8, 0.84));
+  box-shadow:
+    0 0 0 8px rgba(255, 193, 56, 0.12),
+    0 0 80px rgba(255, 171, 38, 0.62),
+    inset 0 0 36px rgba(255, 222, 93, 0.24);
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.72);
+  animation: winSplashIn 480ms cubic-bezier(.16, 1.22, .3, 1) forwards;
+}
+
+.win-splash span {
+  font-size: clamp(25px, 5vw, 56px);
+  font-weight: 950;
+  text-shadow: 0 0 22px rgba(255, 210, 92, 0.92), 0 3px 0 rgba(0, 0, 0, 0.5);
+}
+
+.win-splash strong {
+  margin-top: 4px;
+  font-size: clamp(34px, 7vw, 82px);
+  line-height: 1;
+  text-shadow: 0 0 26px rgba(255, 210, 92, 0.95), 0 4px 0 rgba(0, 0, 0, 0.48);
+}
+
+.win-splash em {
+  margin-top: 8px;
+  color: #ffe7a4;
+  font-style: normal;
+  font-size: clamp(14px, 2vw, 22px);
+  font-weight: 900;
+  text-shadow: 0 0 14px rgba(255, 207, 82, 0.72);
+}
+
+.unlock-splash {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.36), transparent 32%),
+    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--theme) 42%, transparent), transparent 44%),
+    linear-gradient(180deg, rgba(28, 8, 72, 0.96), rgba(28, 6, 10, 0.92));
+}
+
+.win-splash.is-mega {
+  border-color: #fff4a8;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.35), transparent 32%),
+    linear-gradient(180deg, rgba(148, 8, 17, 0.96), rgba(45, 4, 8, 0.9));
+}
+
+.win-splash.is-leaving {
+  animation: winSplashOut 520ms ease forwards;
+}
+
 @keyframes auroraFlow {
   from {
     transform: translate3d(-2%, -2%, 0) scale(1);
@@ -1195,6 +1298,21 @@ button {
   50% {
     border-color: color-mix(in srgb, var(--theme) 54%, transparent);
     filter: drop-shadow(0 0 12px var(--theme));
+  }
+}
+
+@keyframes rimHot {
+  50% {
+    filter: drop-shadow(0 0 18px var(--gold)) drop-shadow(0 0 24px var(--theme));
+  }
+}
+
+@keyframes anticipationPulse {
+  from {
+    box-shadow: inset 0 0 18px rgba(255, 214, 107, 0.2), 0 0 18px rgba(255, 214, 107, 0.22);
+  }
+  to {
+    box-shadow: inset 0 0 35px color-mix(in srgb, var(--theme) 46%, transparent), 0 0 34px color-mix(in srgb, var(--theme) 45%, transparent);
   }
 }
 
@@ -1307,6 +1425,29 @@ button {
       0 28px 100px rgba(0, 0, 0, 0.55),
       0 0 95px color-mix(in srgb, var(--theme) 42%, transparent),
       inset 0 0 65px rgba(255, 214, 107, 0.18);
+  }
+}
+
+@keyframes winSplashIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.58) rotate(-2deg);
+  }
+  58% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.08) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+  }
+}
+
+@keyframes winSplashOut {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -58%) scale(1.16);
+    filter: blur(2px);
   }
 }
 
