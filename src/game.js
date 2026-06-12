@@ -58,7 +58,7 @@ const fx = {
 };
 
 const format = new Intl.NumberFormat("zh-CN");
-const easeOutBack = "cubic-bezier(.16, 1.22, .38, 1)";
+const reelStopEase = "cubic-bezier(.12, .78, .12, 1)";
 
 function currentTheme() {
   return THEMES.find((theme) => theme.id === state.themeId) || THEMES[0];
@@ -137,7 +137,7 @@ function randomBoard(theme) {
 }
 
 function spinStrip(theme, finalColumn) {
-  const stripLength = state.turbo ? 18 : 28;
+  const stripLength = state.turbo ? 14 : 22;
   return [...Array.from({ length: stripLength }, () => weightedSymbol(theme)), ...finalColumn];
 }
 
@@ -317,16 +317,33 @@ function playButtonSound() {
 }
 
 function playReelStop(index) {
-  tone(190 + index * 34, 0.055, "square", 0.16);
-  noiseHit(0.07, 0.16, 1200 + index * 220);
+  tone(520 + index * 92, 0.045, "triangle", 0.14);
+  tone(1040 + index * 120, 0.04, "sine", 0.07, 0.018);
+  noiseHit(0.055, 0.11, 1700 + index * 260);
+}
+
+function playCoinCascade(count = 10, start = 0) {
+  const notes = [988, 1175, 1318, 1568, 1760, 2093];
+  for (let i = 0; i < count; i += 1) {
+    const delay = start + i * 0.038;
+    tone(notes[i % notes.length] * (i % 3 === 0 ? 0.5 : 1), 0.07, i % 2 ? "triangle" : "sine", 0.085, delay);
+    if (i % 2 === 0) noiseHit(0.035, 0.035, 3200 + i * 90, delay);
+  }
+}
+
+function playFreeSpinSound() {
+  [659, 784, 988, 1318, 1568, 1976].forEach((note, index) => tone(note, 0.12, "sine", 0.12, index * 0.055));
+  playCoinCascade(14, 0.12);
 }
 
 function playWinSound(mega = false) {
-  const notes = mega ? [523, 659, 784, 1046, 1318] : [392, 523, 659, 784];
-  notes.forEach((note, index) => tone(note, 0.16 + index * 0.025, "triangle", mega ? 0.18 : 0.13, index * 0.075));
+  const notes = mega ? [523, 659, 784, 1046, 1318, 1568] : [523, 659, 784, 988];
+  notes.forEach((note, index) => tone(note, 0.15 + index * 0.018, "triangle", mega ? 0.17 : 0.12, index * 0.055));
+  playCoinCascade(mega ? 24 : 12, 0.08);
   if (mega) {
-    noiseHit(0.45, 0.22, 2400, 0.08);
-    tone(82, 0.45, "sawtooth", 0.12, 0.02);
+    noiseHit(0.42, 0.2, 2600, 0.08);
+    tone(98, 0.5, "sawtooth", 0.1, 0.02);
+    [523, 659, 784, 1046].forEach((note) => tone(note, 0.42, "sine", 0.055, 0.22));
   }
 }
 
@@ -345,14 +362,15 @@ async function animateReels(finalBoard, theme) {
     reel.classList.add("is-speeding");
     const animation = strip.animate(
       [
-        { transform: "translate3d(0, 0, 0)", filter: "blur(0px) brightness(1)" },
-        { transform: `translate3d(0, -${Math.max(0, travel - 28)}px, 0)`, filter: "blur(7px) brightness(1.55)", offset: 0.82 },
-        { transform: `translate3d(0, -${travel + 18}px, 0)`, filter: "blur(2px) brightness(1.22)", offset: 0.92 },
-        { transform: `translate3d(0, -${travel}px, 0)`, filter: "blur(0px) brightness(1)" },
+        { transform: "translate3d(0, 0, 0)" },
+        { transform: `translate3d(0, -${Math.max(0, travel * 0.24)}px, 0)`, offset: 0.18 },
+        { transform: `translate3d(0, -${Math.max(0, travel - 34)}px, 0)`, offset: 0.78 },
+        { transform: `translate3d(0, -${travel + 16}px, 0)`, offset: 0.92 },
+        { transform: `translate3d(0, -${travel}px, 0)` },
       ],
       {
         duration: baseDuration + index * stopGap,
-        easing: easeOutBack,
+        easing: reelStopEase,
         fill: "forwards",
       },
     );
@@ -397,6 +415,9 @@ function spawnBurst(kind, amount = 120) {
       spin: Math.random() * 8,
     });
   }
+  if (fx.particles.length > 420) {
+    fx.particles.splice(0, fx.particles.length - 420);
+  }
 }
 
 function fxLoop() {
@@ -415,7 +436,7 @@ function fxLoop() {
     fx.ctx.rotate(p.spin);
     fx.ctx.fillStyle = p.color;
     fx.ctx.shadowColor = p.color;
-    fx.ctx.shadowBlur = 18;
+    fx.ctx.shadowBlur = p.shape === "coin" ? 12 : 8;
     if (p.shape === "coin") {
       fx.ctx.beginPath();
       fx.ctx.ellipse(0, 0, p.size * 1.3, p.size * 0.75, 0, 0, Math.PI * 2);
@@ -464,6 +485,7 @@ function pulseWin(result, spend) {
 
   if (result.freeSpinsWon > 0) {
     toast("免费旋转触发", `获得 ${result.freeSpinsWon} 次免费局`);
+    playFreeSpinSound();
     spawnBurst("blizzard", 180);
   }
 }
