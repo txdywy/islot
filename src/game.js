@@ -10,8 +10,8 @@ const state = {
   themeProgress: readStoredJson("islot-theme-progress", {}),
   lineCount: clampNumber(Number(localStorage.getItem("islot-line-count") || PAYLINES.length), 1, PAYLINES.length),
   spinning: false,
-  turbo: false,
-  muted: false,
+  turbo: localStorage.getItem("islot-turbo") === "true",
+  muted: localStorage.getItem("islot-muted") === "true",
   auto: false,
   autoTimer: 0,
   linePreviewTimer: 0,
@@ -116,6 +116,8 @@ function saveState() {
   localStorage.setItem("islot-line-count", String(currentLineCount()));
   localStorage.setItem("islot-unlocked-themes", JSON.stringify(state.unlockedThemes));
   localStorage.setItem("islot-theme-progress", JSON.stringify(state.themeProgress));
+  localStorage.setItem("islot-turbo", String(state.turbo));
+  localStorage.setItem("islot-muted", String(state.muted));
 }
 
 function themeIndex(themeId) {
@@ -158,7 +160,6 @@ function renderShell() {
   els.autoButton.classList.toggle("is-active", state.auto);
   els.turbo.classList.toggle("is-active", state.turbo);
   els.mute.classList.toggle("is-active", state.muted);
-  els.heatFill.style.width = `${Math.min(100, state.heat * 14)}%`;
   const progress = themeProgress(theme.id);
   const nextTheme = nextLockedTheme(theme.id);
   els.heatFill.style.width = `${progress}%`;
@@ -304,7 +305,12 @@ function evaluate(board, bet, lineCount = currentLineCount()) {
   return { total, wins, freeSpinsWon, scatters, lineCount };
 }
 
+let resizeTimer = 0;
 function resizeCanvas() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(_doResize, 100);
+}
+function _doResize() {
   const isMobile = window.innerWidth < 768;
   const ratio = Math.min(isMobile ? 1.5 : 2, window.devicePixelRatio || 1);
   fx.width = window.innerWidth;
@@ -1162,6 +1168,7 @@ function addCoins() {
 
 function bindEvents() {
   els.spinButton.addEventListener("click", spin);
+  els.spinButton.addEventListener("touchstart", (e) => { e.preventDefault(); spin(); }, { passive: false });
   els.addCoins.addEventListener("click", addCoins);
   els.bankAdd.addEventListener("click", addCoins);
   els.betDown.addEventListener("click", () => {
@@ -1203,12 +1210,14 @@ function bindEvents() {
     playButtonSound();
     state.turbo = !state.turbo;
     renderShell();
+    saveState();
   });
   els.mute.addEventListener("click", () => {
     state.muted = !state.muted;
     if (state.muted) stopSpinSound();
     else playButtonSound();
     renderShell();
+    saveState();
     toast(state.muted ? "静音模式" : "老虎机音效已开启", state.muted ? "已停止转轴和中奖音效。" : "包含滚轴、停轴、按钮、大奖合成音效。");
   });
   els.themeList.addEventListener("click", (event) => {
@@ -1218,7 +1227,7 @@ function bindEvents() {
   document.querySelectorAll("[data-theme-shortcut]").forEach((button) => {
     button.addEventListener("click", () => setTheme(button.dataset.themeShortcut));
   });
-  window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("resize", resizeCanvas, { passive: true });
   window.addEventListener("keydown", (event) => {
     if (event.code === "Space") {
       event.preventDefault();
@@ -1228,7 +1237,7 @@ function bindEvents() {
 }
 
 function init() {
-  resizeCanvas();
+  _doResize();
   renderThemes();
   renderPaytable();
   renderShell();
