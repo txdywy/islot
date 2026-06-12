@@ -20,6 +20,10 @@ const state = {
 const audio = {
   ctx: null,
   master: null,
+  delay: null,
+  delayGain: null,
+  delayFeedback: null,
+  compressor: null,
   spinOsc: null,
   spinGain: null,
   spinNoise: null,
@@ -253,8 +257,8 @@ function renderSpinStrips(finalBoard, theme) {
     .join("");
 }
 
-function syncRollingReelMetrics() {
-  const reels = [...els.reels.querySelectorAll(".reel.is-rolling")];
+function syncAllReelMetrics() {
+  const reels = [...els.reels.querySelectorAll(".reel")];
   for (const reel of reels) {
     const styles = window.getComputedStyle(reel);
     const gap = Number.parseFloat(styles.rowGap || styles.gap || "0") || 0;
@@ -301,13 +305,23 @@ function evaluate(board, bet, lineCount = currentLineCount()) {
 }
 
 function resizeCanvas() {
-  const ratio = window.devicePixelRatio || 1;
+  const isMobile = window.innerWidth < 768;
+  const ratio = Math.min(isMobile ? 1.5 : 2, window.devicePixelRatio || 1);
   fx.width = window.innerWidth;
   fx.height = window.innerHeight;
   els.canvas.width = Math.floor(fx.width * ratio);
   els.canvas.height = Math.floor(fx.height * ratio);
   fx.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  syncAllReelMetrics();
 }
+
+const THEME_SCALES = {
+  vegas: [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66, 1318.51], // C Major Pentatonic (C5 - E6)
+  egypt: [493.88, 523.25, 622.25, 659.25, 739.99, 783.99, 987.77, 1046.50], // E Phrygian Dominant (E5, F5, G#5, A5, B5, C6, D#6, E6)
+  maya: [440.00, 523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66], // A Minor Pentatonic (A4 - D6)
+  arctic: [587.33, 659.25, 783.99, 880.00, 987.77, 1174.66, 1318.51, 1567.98], // D Major Pentatonic / Crystal (D5 - G6)
+  dragon: [392.00, 466.16, 523.25, 587.33, 698.46, 783.99, 932.33, 1046.50]  // G Minor Pentatonic (G4 - C6)
+};
 
 function ensureAudio() {
   if (state.muted) return null;
@@ -317,7 +331,31 @@ function ensureAudio() {
     audio.ctx = new AudioContext();
     audio.master = audio.ctx.createGain();
     audio.master.gain.value = 0.32;
-    audio.master.connect(audio.ctx.destination);
+    
+    // Dynamics Compressor to glue sound and avoid clipping
+    audio.compressor = audio.ctx.createDynamicsCompressor();
+    audio.compressor.threshold.setValueAtTime(-12, audio.ctx.currentTime);
+    audio.compressor.knee.setValueAtTime(30, audio.ctx.currentTime);
+    audio.compressor.ratio.setValueAtTime(12, audio.ctx.currentTime);
+    audio.compressor.attack.setValueAtTime(0.003, audio.ctx.currentTime);
+    audio.compressor.release.setValueAtTime(0.08, audio.ctx.currentTime);
+    
+    // Lush Echo / Delay line
+    audio.delay = audio.ctx.createDelay(1.0);
+    audio.delayFeedback = audio.ctx.createGain();
+    audio.delayGain = audio.ctx.createGain();
+    
+    audio.delay.delayTime.value = 0.16;
+    audio.delayFeedback.gain.value = 0.35;
+    audio.delayGain.gain.value = 0.5;
+    
+    audio.delay.connect(audio.delayFeedback);
+    audio.delayFeedback.connect(audio.delay);
+    audio.delay.connect(audio.master);
+    
+    audio.master.connect(audio.compressor);
+    audio.compressor.connect(audio.ctx.destination);
+    
     audio.noiseBuffer = audio.ctx.createBuffer(1, audio.ctx.sampleRate * 0.5, audio.ctx.sampleRate);
     const data = audio.noiseBuffer.getChannelData(0);
     for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
@@ -341,6 +379,45 @@ function tone(freq, duration = 0.12, type = "sine", volume = 0.25, when = 0) {
   gain.connect(audio.master);
   osc.start(start);
   osc.stop(start + duration + 0.02);
+}
+
+function fmTone(carrierFreq, modFreqRatio, modIndexStart, modIndexEnd, duration, volume, type = "sine", when = 0, sendToDelay = false) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const start = ctx.currentTime + when;
+  
+  const carrier = ctx.createOscillator();
+  const modulator = ctx.createOscillator();
+  const modGain = ctx.createGain();
+  const carrierGain = ctx.createGain();
+  
+  carrier.type = type;
+  modulator.type = "sine";
+  
+  carrier.frequency.setValueAtTime(carrierFreq, start);
+  modulator.frequency.setValueAtTime(carrierFreq * modFreqRatio, start);
+  
+  modGain.gain.setValueAtTime(carrierFreq * modFreqRatio * modIndexStart, start);
+  modGain.gain.exponentialRampToValueAtTime(Math.max(0.001, carrierFreq * modFreqRatio * modIndexEnd), start + duration);
+  
+  carrierGain.gain.setValueAtTime(0.0001, start);
+  carrierGain.gain.exponentialRampToValueAtTime(volume, start + 0.006);
+  carrierGain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  
+  modulator.connect(modGain);
+  modGain.connect(carrier.frequency);
+  carrier.connect(carrierGain);
+  
+  carrierGain.connect(audio.master);
+  if (sendToDelay && audio.delay) {
+    carrierGain.connect(audio.delay);
+  }
+  
+  modulator.start(start);
+  carrier.start(start);
+  
+  modulator.stop(start + duration + 0.05);
+  carrier.stop(start + duration + 0.05);
 }
 
 function noiseHit(duration = 0.12, volume = 0.2, cutoff = 1400, when = 0) {
@@ -381,46 +458,68 @@ function startSpinSound(totalDuration = spinTiming().totalDuration) {
   const ctx = ensureAudio();
   if (!ctx || audio.spinOsc) return;
   const now = ctx.currentTime;
-  tone(220, 0.32, "sawtooth", 0.1);
-  tone(820, 0.18, "triangle", 0.055, 0.12);
-  const osc = ctx.createOscillator();
+  
+  // Starting sweep chimes
+  fmTone(600, 1.414, 1.5, 0.1, 0.22, 0.12, "sine", 0, true);
+  fmTone(900, 2.0, 1.0, 0.05, 0.18, 0.07, "sine", 0.05, true);
+  
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
+  
+  osc1.type = "triangle";
+  osc2.type = "triangle";
+  
+  osc1.frequency.setValueAtTime(110, now);
+  osc1.frequency.linearRampToValueAtTime(80, now + totalDuration / 1000);
+  
+  osc2.frequency.setValueAtTime(55, now);
+  osc2.frequency.linearRampToValueAtTime(40, now + totalDuration / 1000);
+  
+  filter.type = "lowpass";
+  filter.frequency.value = 160;
+  
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.exponentialRampToValueAtTime(0.24, now + 0.15);
+  
+  osc1.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
+  gain.connect(audio.master);
+  
+  osc1.start();
+  osc2.start();
+  
+  audio.spinOsc = [osc1, osc2];
+  audio.spinGain = gain;
+  
   const noise = ctx.createBufferSource();
   const noiseFilter = ctx.createBiquadFilter();
   const noiseGain = ctx.createGain();
-  osc.type = "sawtooth";
-  osc.frequency.setValueAtTime(58, now);
-  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 182 : 132, now + 0.42);
-  osc.frequency.exponentialRampToValueAtTime(state.turbo ? 112 : 82, now + totalDuration / 1000);
-  filter.type = "lowpass";
-  filter.frequency.value = 740;
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.11, now + 0.08);
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(audio.master);
-
+  
   noise.buffer = audio.noiseBuffer;
   noise.loop = true;
+  
   noiseFilter.type = "bandpass";
-  noiseFilter.frequency.setValueAtTime(state.turbo ? 1800 : 1380, now);
-  noiseFilter.frequency.exponentialRampToValueAtTime(state.turbo ? 1120 : 820, now + totalDuration / 1000);
-  noiseFilter.Q.value = 1.2;
-  noiseGain.gain.setValueAtTime(0.0001, now);
-  noiseGain.gain.exponentialRampToValueAtTime(state.turbo ? 0.072 : 0.105, now + 0.12);
+  noiseFilter.Q.value = 1.0;
+  noiseFilter.frequency.setValueAtTime(1000, now);
+  noiseFilter.frequency.exponentialRampToValueAtTime(450, now + totalDuration / 1000);
+  
+  noiseGain.gain.setValueAtTime(0.001, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.05, now + 0.2);
+  
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
   noiseGain.connect(audio.master);
-
-  osc.start();
+  
   noise.start();
-  audio.spinOsc = osc;
-  audio.spinGain = gain;
+  
   audio.spinNoise = noise;
   audio.spinNoiseGain = noiseGain;
+  
   scheduleSpinTicks(totalDuration);
-  noiseHit(0.18, 0.16, 900);
+  noiseHit(0.15, 0.12, 1000);
 }
 
 function stopSpinSound() {
@@ -429,14 +528,17 @@ function stopSpinSound() {
   if (audio.spinOsc && audio.spinGain) {
     audio.spinGain.gain.cancelScheduledValues(ctx.currentTime);
     audio.spinGain.gain.setValueAtTime(Math.max(audio.spinGain.gain.value, 0.001), ctx.currentTime);
-    audio.spinGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
-    audio.spinOsc.stop(ctx.currentTime + 0.22);
+    audio.spinGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
+    const oscillators = Array.isArray(audio.spinOsc) ? audio.spinOsc : [audio.spinOsc];
+    oscillators.forEach(osc => {
+      try { osc.stop(ctx.currentTime + 0.2); } catch (e) {}
+    });
   }
   if (audio.spinNoise && audio.spinNoiseGain) {
     audio.spinNoiseGain.gain.cancelScheduledValues(ctx.currentTime);
     audio.spinNoiseGain.gain.setValueAtTime(Math.max(audio.spinNoiseGain.gain.value, 0.001), ctx.currentTime);
-    audio.spinNoiseGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-    audio.spinNoise.stop(ctx.currentTime + 0.24);
+    audio.spinNoiseGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
+    try { audio.spinNoise.stop(ctx.currentTime + 0.2); } catch (e) {}
   }
   audio.spinOsc = null;
   audio.spinGain = null;
@@ -451,48 +553,142 @@ function scheduleSpinTicks(totalDuration) {
   for (let i = 0; i < count; i += 1) {
     const t = 0.04 + i * step;
     const phase = i / Math.max(1, count - 1);
-    const shimmer = i % 5 === 0 ? 140 : i % 3 === 0 ? 72 : 0;
-    const pitch = 680 + (i % 8) * 34 + shimmer - phase * 110;
-    const volume = (state.turbo ? 0.027 : 0.033) * (1 - phase * 0.28);
-    tone(pitch, 0.024, i % 4 === 0 ? "triangle" : "square", volume, t);
-    if (i % 4 === 0) noiseHit(0.028, 0.026, 2100 + (i % 6) * 170, t + 0.006);
+    const volume = (state.turbo ? 0.024 : 0.028) * (1 - phase * 0.35);
+    const tickFilterCutoff = 2200 - phase * 500;
+    noiseHit(0.008, volume, tickFilterCutoff, t);
+    tone(1500 - phase * 300, 0.005, "sine", volume * 0.4, t);
   }
 }
 
 function playButtonSound() {
-  tone(420, 0.07, "triangle", 0.18);
-  tone(780, 0.08, "sine", 0.11, 0.035);
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  noiseHit(0.012, 0.09, 2800);
+  tone(880, 0.06, "sine", 0.14);
+  tone(1320, 0.07, "sine", 0.08, 0.01);
 }
 
 function playReelStop(index) {
-  tone(128 - index * 7, 0.16, "sine", 0.22);
-  tone(540 + index * 72, 0.055, "triangle", 0.14, 0.018);
-  tone(1040 + index * 120, 0.045, "sine", 0.07, 0.04);
-  noiseHit(0.075, 0.14, 1600 + index * 260);
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const thudStart = ctx.currentTime;
+  const thudOsc = ctx.createOscillator();
+  const thudGain = ctx.createGain();
+  thudOsc.type = "triangle";
+  thudOsc.frequency.setValueAtTime(140, thudStart);
+  thudOsc.frequency.exponentialRampToValueAtTime(45, thudStart + 0.06);
+  thudGain.gain.setValueAtTime(0.001, thudStart);
+  thudGain.gain.exponentialRampToValueAtTime(0.25, thudStart + 0.006);
+  thudGain.gain.exponentialRampToValueAtTime(0.001, thudStart + 0.08);
+  thudOsc.connect(thudGain);
+  thudGain.connect(audio.master);
+  thudOsc.start(thudStart);
+  thudOsc.stop(thudStart + 0.1);
+  
+  noiseHit(0.03, 0.12, 1300 + index * 90);
+  
+  const baseFreq = 650 + index * 75;
+  tone(baseFreq, 0.16, "sine", 0.08);
+  tone(baseFreq * 1.618, 0.12, "sine", 0.04, 0.005);
 }
 
 function playCoinCascade(count = 10, start = 0) {
   const notes = [988, 1175, 1318, 1568, 1760, 2093];
   for (let i = 0; i < count; i += 1) {
-    const delay = start + i * 0.031;
-    tone(notes[i % notes.length] * (i % 4 === 0 ? 0.5 : 1), 0.075, i % 2 ? "triangle" : "sine", 0.092, delay);
-    if (i % 2 === 0) noiseHit(0.038, 0.04, 3200 + i * 95, delay);
+    const delay = start + i * 0.035;
+    fmTone(
+      notes[i % notes.length] * (i % 3 === 0 ? 0.75 : 1.2),
+      1.5,
+      2.0,
+      0.0,
+      0.08,
+      0.075,
+      "sine",
+      delay,
+      true
+    );
+    noiseHit(0.015, 0.05, 3200 + i * 80, delay);
   }
 }
 
 function playFreeSpinSound() {
-  [659, 784, 988, 1318, 1568, 1976].forEach((note, index) => tone(note, 0.12, "sine", 0.12, index * 0.055));
-  playCoinCascade(14, 0.12);
+  const theme = currentTheme();
+  const scale = THEME_SCALES[theme.id] || THEME_SCALES.vegas;
+  scale.forEach((note, index) => {
+    fmTone(
+      note * 1.5,
+      2.0,
+      2.5,
+      0.01,
+      0.35,
+      0.11,
+      "sine",
+      index * 0.055,
+      true
+    );
+  });
+  playCoinCascade(16, 0.15);
 }
 
 function playWinSound(mega = false) {
-  const notes = mega ? [523, 659, 784, 1046, 1318, 1568] : [523, 659, 784, 988];
-  notes.forEach((note, index) => tone(note, 0.15 + index * 0.018, "triangle", mega ? 0.17 : 0.12, index * 0.055));
-  playCoinCascade(mega ? 24 : 12, 0.08);
+  const theme = currentTheme();
+  const scale = THEME_SCALES[theme.id] || THEME_SCALES.vegas;
+  
   if (mega) {
-    noiseHit(0.42, 0.2, 2600, 0.08);
-    tone(98, 0.5, "sawtooth", 0.1, 0.02);
-    [523, 659, 784, 1046].forEach((note) => tone(note, 0.42, "sine", 0.055, 0.22));
+    const ctx = ensureAudio();
+    if (ctx) {
+      noiseHit(0.55, 0.25, 700);
+      const bassOsc = ctx.createOscillator();
+      const bassGain = ctx.createGain();
+      bassOsc.type = "sawtooth";
+      bassOsc.frequency.setValueAtTime(82, ctx.currentTime);
+      bassOsc.frequency.exponentialRampToValueAtTime(41, ctx.currentTime + 0.55);
+      
+      bassGain.gain.setValueAtTime(0.001, ctx.currentTime);
+      bassGain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      bassGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      
+      bassOsc.connect(bassGain);
+      bassGain.connect(audio.master);
+      bassOsc.start();
+      bassOsc.stop(ctx.currentTime + 0.55);
+    }
+    
+    const chordIndices = [0, 2, 4, 7, 9, 11, 7, 9, 11, 14];
+    const extendedScale = [...scale, ...scale.map(f => f * 2)];
+    
+    chordIndices.forEach((idx, i) => {
+      const freq = extendedScale[idx] || scale[0];
+      fmTone(
+        freq,
+        i % 2 === 0 ? 1.414 : 2.0,
+        3.0,
+        0.01,
+        0.5,
+        0.14,
+        "triangle",
+        i * 0.065,
+        true
+      );
+    });
+    playCoinCascade(32, 0.1);
+  } else {
+    const arpeggio = [0, 2, 4, 7];
+    arpeggio.forEach((idx, i) => {
+      const freq = scale[idx] || scale[0];
+      fmTone(
+        freq,
+        2.0,
+        1.5,
+        0.01,
+        0.28,
+        0.12,
+        "sine",
+        i * 0.065,
+        true
+      );
+    });
+    playCoinCascade(12, 0.08);
   }
 }
 
@@ -504,7 +700,7 @@ async function animateReels(finalBoard, theme) {
   els.machine.classList.add("is-reel-spinning");
 
   await new Promise((resolve) => requestAnimationFrame(resolve));
-  syncRollingReelMetrics();
+  syncAllReelMetrics();
 
   const loopAnimations = reels.map((reel) => {
     const strip = reel.querySelector(".reel-strip");
@@ -606,6 +802,7 @@ function spawnBurst(kind, amount = 120) {
   if (fx.particles.length > 420) {
     fx.particles.splice(0, fx.particles.length - 420);
   }
+  startFxLoop();
 }
 
 function spawnCoinShower(mega = false) {
@@ -630,6 +827,7 @@ function spawnCoinShower(mega = false) {
   if (fx.particles.length > 520) {
     fx.particles.splice(0, fx.particles.length - 520);
   }
+  startFxLoop();
 }
 
 function showWinSplash(amount, mega) {
@@ -684,7 +882,22 @@ function unlockTheme(theme) {
   renderShell();
 }
 
+let fxLoopRunning = false;
+
+function startFxLoop() {
+  if (fxLoopRunning) return;
+  fxLoopRunning = true;
+  requestAnimationFrame(fxLoop);
+}
+
 function fxLoop() {
+  if (fx.particles.length === 0) {
+    fx.ctx.clearRect(0, 0, fx.width, fx.height);
+    fxLoopRunning = false;
+    return;
+  }
+  
+  const isMobile = window.innerWidth < 768;
   fx.ctx.clearRect(0, 0, fx.width, fx.height);
   for (let i = fx.particles.length - 1; i >= 0; i -= 1) {
     const p = fx.particles[i];
@@ -699,8 +912,10 @@ function fxLoop() {
     fx.ctx.translate(p.x, p.y);
     fx.ctx.rotate(p.spin);
     fx.ctx.fillStyle = p.color;
-    fx.ctx.shadowColor = p.color;
-    fx.ctx.shadowBlur = p.shape === "coin" ? 12 : 8;
+    if (!isMobile) {
+      fx.ctx.shadowColor = p.color;
+      fx.ctx.shadowBlur = p.shape === "coin" ? 12 : 8;
+    }
     if (p.shape === "coin") {
       fx.ctx.beginPath();
       fx.ctx.ellipse(0, 0, p.size * 1.3, p.size * 0.75, 0, 0, Math.PI * 2);
@@ -1014,7 +1229,6 @@ function init() {
   renderShell();
   renderBoard(randomBoard(currentTheme()), []);
   bindEvents();
-  fxLoop();
   spawnBurst("goldstorm", 80);
 }
 

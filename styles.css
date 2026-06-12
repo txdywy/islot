@@ -547,6 +547,9 @@ button {
   box-shadow:
     inset 0 0 34px rgba(0, 0, 0, 0.72),
     0 0 38px color-mix(in srgb, var(--theme) 20%, transparent);
+  transform: translateZ(0);
+  isolation: isolate;
+  backface-visibility: hidden;
 }
 
 .reel-vignette {
@@ -677,7 +680,7 @@ button {
 
 .reel-strip .symbol {
   min-height: 0;
-  height: var(--reel-row-height, 128px);
+  height: var(--reel-row-height, clamp(74px, 11vw, 128px));
 }
 
 .reel.is-rolling {
@@ -692,6 +695,10 @@ button {
 
 .reel.is-speeding .reel-strip {
   filter: blur(1.15px);
+}
+
+.reel.is-rolling .symbol-art {
+  filter: none !important;
 }
 
 .reel.is-rolling .symbol::after {
@@ -1340,14 +1347,17 @@ button {
 
 @keyframes lightMarch {
   50% {
-    border-color: color-mix(in srgb, var(--theme) 54%, transparent);
-    filter: drop-shadow(0 0 12px var(--theme));
+    border-color: color-mix(in srgb, var(--theme) 70%, transparent);
+    opacity: 0.6;
   }
 }
 
 @keyframes rimHot {
   50% {
-    filter: drop-shadow(0 0 18px var(--gold)) drop-shadow(0 0 24px var(--theme));
+    opacity: 0.95;
+    background:
+      linear-gradient(90deg, var(--gold), transparent 14% 86%, var(--gold)),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.38), transparent 18% 82%, var(--gold));
   }
 }
 
@@ -1747,6 +1757,31 @@ button {
 
   .reel-strip {
     gap: 6px;
+  }
+
+  /* Disable backdrop filters on mobile for huge layout performance gains */
+  .rail-heading,
+  .panel-block,
+  .meter-card,
+  .bet-control,
+  .tab,
+  .icon-button,
+  .ghost-button,
+  .round-button,
+  .toast {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(12, 10, 13, 0.96) !important;
+  }
+
+  /* Disable expensive motion blur filter on mobile spinning strips */
+  .reel.is-speeding .reel-strip {
+    filter: none !important;
+  }
+
+  /* Force responsive fallback height on mobile to prevent open-page overflow */
+  .reel-strip .symbol {
+    height: var(--reel-row-height, 70px) !important;
   }
 
   .symbol {
