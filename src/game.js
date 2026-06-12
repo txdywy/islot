@@ -771,6 +771,9 @@ async function animateReels(finalBoard, theme) {
 }
 
 function spawnBurst(kind, amount = 120) {
+  const isMobile = window.innerWidth < 768;
+  const count = isMobile ? Math.min(amount, 40) : amount;
+  const maxCap = isMobile ? 120 : 420;
   const theme = currentTheme();
   const palette = {
     goldstorm: ["#ffe27a", "#ff9a1f", "#ffffff", theme.accent],
@@ -782,7 +785,7 @@ function spawnBurst(kind, amount = 120) {
 
   const originX = fx.width * (0.42 + Math.random() * 0.18);
   const originY = fx.height * (0.28 + Math.random() * 0.28);
-  for (let i = 0; i < amount; i += 1) {
+  for (let i = 0; i < count; i += 1) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1.5 + Math.random() * (kind === "blizzard" ? 5 : 12);
     fx.particles.push({
@@ -790,23 +793,25 @@ function spawnBurst(kind, amount = 120) {
       y: originY + (Math.random() - 0.5) * 120,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - Math.random() * 3,
-      life: 50 + Math.random() * 90,
-      maxLife: 90,
-      size: 2 + Math.random() * (kind === "blizzard" ? 5 : 9),
+      life: isMobile ? 30 + Math.random() * 40 : 50 + Math.random() * 90,
+      maxLife: isMobile ? 50 : 90,
+      size: isMobile ? 2 + Math.random() * 5 : 2 + Math.random() * (kind === "blizzard" ? 5 : 9),
       color: palette[Math.floor(Math.random() * palette.length)],
       shape: Math.random() > 0.65 ? "coin" : "spark",
       gravity: kind === "blizzard" ? 0.01 : 0.12,
       spin: Math.random() * 8,
     });
   }
-  if (fx.particles.length > 420) {
-    fx.particles.splice(0, fx.particles.length - 420);
+  if (fx.particles.length > maxCap) {
+    fx.particles.splice(0, fx.particles.length - maxCap);
   }
   startFxLoop();
 }
 
 function spawnCoinShower(mega = false) {
-  const amount = mega ? 260 : 130;
+  const isMobile = window.innerWidth < 768;
+  const amount = isMobile ? (mega ? 50 : 25) : (mega ? 260 : 130);
+  const maxCap = isMobile ? 120 : 520;
   const colors = ["#fff4a8", "#ffd45a", "#ff981f", "#ffffff", currentTheme().accent];
   for (let i = 0; i < amount; i += 1) {
     const fromTop = Math.random() > 0.34;
@@ -815,17 +820,17 @@ function spawnCoinShower(mega = false) {
       y: fromTop ? -30 - Math.random() * 240 : fx.height * (0.25 + Math.random() * 0.22),
       vx: (Math.random() - 0.5) * (fromTop ? 3.6 : 12),
       vy: fromTop ? 3 + Math.random() * 7 : -6 - Math.random() * 7,
-      life: mega ? 105 + Math.random() * 90 : 80 + Math.random() * 60,
-      maxLife: mega ? 150 : 110,
-      size: 4 + Math.random() * (mega ? 9 : 7),
+      life: isMobile ? (mega ? 40 + Math.random() * 40 : 30 + Math.random() * 30) : (mega ? 105 + Math.random() * 90 : 80 + Math.random() * 60),
+      maxLife: isMobile ? (mega ? 60 : 45) : (mega ? 150 : 110),
+      size: isMobile ? 3 + Math.random() * 4 : 4 + Math.random() * (mega ? 9 : 7),
       color: colors[Math.floor(Math.random() * colors.length)],
       shape: Math.random() > 0.18 ? "coin" : "spark",
       gravity: fromTop ? 0.12 : 0.2,
       spin: Math.random() * 8,
     });
   }
-  if (fx.particles.length > 520) {
-    fx.particles.splice(0, fx.particles.length - 520);
+  if (fx.particles.length > maxCap) {
+    fx.particles.splice(0, fx.particles.length - maxCap);
   }
   startFxLoop();
 }

@@ -35,7 +35,7 @@ body {
   color: var(--text);
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.35)),
-    url("assets/islot-casino-stage.png") center top / cover no-repeat fixed,
+    url("assets/islot-casino-stage.png") center top / cover no-repeat,
     linear-gradient(135deg, #08040c 0%, #13111d 42%, #07121a 100%);
 }
 
@@ -76,6 +76,7 @@ button {
     linear-gradient(145deg, transparent 10%, color-mix(in srgb, var(--theme-2) 22%, transparent), transparent 70%);
   filter: blur(22px) saturate(1.25);
   animation: auroraFlow 14s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
 .snow-layer {
@@ -491,6 +492,7 @@ button {
     0 0 70px color-mix(in srgb, var(--theme) 24%, transparent),
     inset 0 0 50px rgba(255, 214, 107, 0.12);
   overflow: hidden;
+  contain: layout style;
 }
 
 .machine::before,
@@ -759,7 +761,6 @@ button {
   background-image: url("assets/islot-symbol-atlas.png");
   background-repeat: no-repeat;
   background-size: 300% 200%;
-  filter: drop-shadow(0 0 16px color-mix(in srgb, var(--theme) 42%, transparent));
   transform: translateZ(0);
 }
 
@@ -1526,7 +1527,6 @@ button {
   to {
     opacity: 0;
     transform: translate(-50%, -58%) scale(1.16);
-    filter: blur(2px);
   }
 }
 
@@ -1759,7 +1759,11 @@ button {
     gap: 6px;
   }
 
-  /* Disable backdrop filters on mobile for huge layout performance gains */
+  /* ═══════════════════════════════════════════════════════════════
+     MOBILE PERFORMANCE: Eliminate ALL expensive GPU operations
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* 1. Kill all backdrop-filter blur (extremely expensive on mobile GPU) */
   .rail-heading,
   .panel-block,
   .meter-card,
@@ -1774,19 +1778,136 @@ button {
     background: rgba(12, 10, 13, 0.96) !important;
   }
 
-  /* Disable expensive motion blur filter on mobile spinning strips */
+  /* 2. Kill aurora filter+animation (full-screen blur(22px) is devastating) */
+  .aurora {
+    display: none !important;
+  }
+
+  /* 3. Kill snow-layer animation (full-screen background-position animation) */
+  .snow-layer {
+    display: none !important;
+  }
+
+  /* 4. Kill body::before overlay (extra full-screen compositing layer) */
+  body::before {
+    display: none !important;
+  }
+
+  /* 5. Use scroll instead of fixed background (fixed forces repaint on scroll) */
+  body {
+    background-attachment: scroll !important;
+  }
+
+  /* 6. Kill machine conic-gradient sweep pseudo-elements (2 rotating full-size layers) */
+  .machine::before,
+  .machine::after {
+    display: none !important;
+  }
+
+  /* 7. Kill machine-lights infinite dashed-border animation */
+  .machine-lights {
+    animation: none !important;
+  }
+
+  /* 8. Kill machine-rim animation during spin */
+  .machine.is-reel-spinning .machine-rim {
+    animation: none !important;
+    opacity: 0.72;
+  }
+
+  /* 9. Kill spin-button shine sweep animation (infinite translateX on pseudo-element) */
+  .spin-button::after {
+    animation: none !important;
+    display: none !important;
+  }
+
+  /* 10. Kill reel::before gradient overlay (5 extra compositing layers) */
+  .reel::before {
+    display: none !important;
+  }
+
+  /* 11. Kill speed lines pseudo-element during spin (5 animated pseudo-elements) */
+  .reel.is-speeding::after {
+    display: none !important;
+  }
+
+  /* 12. Kill reel-strip motion blur filter */
   .reel.is-speeding .reel-strip {
     filter: none !important;
   }
 
-  /* Force responsive fallback height on mobile to prevent open-page overflow */
-  .reel-strip .symbol {
-    height: var(--reel-row-height, 70px) !important;
+  /* 13. Kill symbol::after shine pseudo-element (15+ extra layers during spin) */
+  .symbol::after {
+    display: none !important;
   }
 
+  /* 14. Simplify symbol backgrounds (remove expensive multi-layer gradients) */
   .symbol {
     min-width: 0;
     min-height: 70px;
+    background: rgba(18, 14, 22, 0.9) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  /* 15. Simplify symbol.is-rolling box-shadow */
+  .reel.is-rolling .symbol {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  }
+
+  /* 16. Kill reel-vignette mix-blend-mode (forces compositing) */
+  .reel-vignette {
+    mix-blend-mode: normal !important;
+  }
+
+  /* 17. Kill armed glow animation */
+  .machine.is-armed .reel-window {
+    animation: none !important;
+  }
+
+  /* 18. Kill screen shake (forced relayout of entire page) */
+  .screen-shake {
+    animation: none !important;
+  }
+
+  /* 19. Simplify prizeGlow/megaPrizeGlow (filter:brightness causes full repaint) */
+  .machine.is-small-hit {
+    animation: none !important;
+  }
+  .machine.is-mega-hit {
+    animation: none !important;
+  }
+
+  /* 20. Simplify hitPulse (box-shadow animation on 15 symbols = 15 repaints/frame) */
+  .symbol.is-hit {
+    animation: none !important;
+    border-color: var(--gold) !important;
+    box-shadow: 0 0 12px rgba(255, 214, 107, 0.5) !important;
+  }
+
+  /* 21. Kill payline SVG filter (feGaussianBlur is extremely expensive) */
+  .payline-burst {
+    filter: none !important;
+  }
+
+  /* 22. Simplify anticipation pulse */
+  .reel.is-anticipating {
+    animation: none !important;
+    border: 2px solid rgba(255, 43, 214, 0.7);
+  }
+
+  /* 23. Kill reel-window glow vignette gradient */
+  .reel-window::before {
+    display: none !important;
+  }
+
+  /* 24. Reduce machine box-shadow complexity */
+  .machine {
+    box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  /* 25. Responsive fallback heights */
+  .reel-strip .symbol {
+    height: var(--reel-row-height, 70px) !important;
   }
 
   .symbol-art {
