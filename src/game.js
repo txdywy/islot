@@ -966,6 +966,69 @@ function spawnShockwave(x, y) {
   });
   startFxLoop();
 }
+function spawnLaserSweep() {
+  const theme = currentTheme();
+  const reelsRect = els.reels.getBoundingClientRect();
+  const isMobile = window.innerWidth < 768;
+  const duration = isMobile ? 22 : 32;
+  fx.particles.push({
+    shape: "laser",
+    x: reelsRect.left,
+    y: reelsRect.top,
+    vx: 0,
+    vy: reelsRect.height / duration,
+    life: duration,
+    maxLife: duration,
+    size: 0,
+    color: theme.accent,
+    gravity: 0,
+    spin: 0
+  });
+  startFxLoop();
+}
+
+function drawLightning(ctx, x1, y1, x2, y2, color, width, isMobile) {
+  ctx.save();
+  ctx.beginPath();
+  
+  const steps = 8;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    let tx = x1 + dx * t;
+    let ty = y1 + dy * t;
+    if (i < steps) {
+      const offset = (Math.random() - 0.5) * (isMobile ? 8 : 14);
+      tx += (-dy / len) * offset;
+      ty += (dx / len) * offset;
+    }
+    ctx.lineTo(tx, ty);
+  }
+  
+  if (isMobile) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width + 1.5;
+    ctx.stroke();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = width * 0.7;
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = width * 0.35;
+    ctx.shadowBlur = 0;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
 let fxLoopRunning = false;
 
@@ -976,7 +1039,7 @@ function startFxLoop() {
 }
 
 function fxLoop() {
-  if (fx.particles.length === 0) {
+  if (fx.particles.length === 0 && !state.spinning) {
     fx.ctx.clearRect(0, 0, fx.width, fx.height);
     fxLoopRunning = false;
     return;
@@ -984,10 +1047,86 @@ function fxLoop() {
   
   const isMobile = window.innerWidth < 768;
   fx.ctx.clearRect(0, 0, fx.width, fx.height);
+  
+  // 1. Draw lightning for anticipating reels
+  if (!isMobile || Math.random() < 0.85) {
+    const anticipatingReels = document.querySelectorAll(".reel.is-anticipating");
+    anticipatingReels.forEach((reel) => {
+      const rect = reel.getBoundingClientRect();
+      const theme = currentTheme();
+      const lightningColor = theme.second || theme.accent;
+      drawLightning(fx.ctx, rect.left, rect.top, rect.left, rect.bottom, lightningColor, 3, isMobile);
+      drawLightning(fx.ctx, rect.right, rect.top, rect.right, rect.bottom, lightningColor, 3, isMobile);
+    });
+  }
+  
+  // 2. Spawn flame sparks during spinning
+  if (state.spinning) {
+    const reelsRect = els.reels.getBoundingClientRect();
+    const spawnCount = isMobile ? 1 : 2;
+    const colors = ["#ff3300", "#ff6600", "#ffaa00", "#ffd45a", "#ffffff"];
+    for (let j = 0; j < spawnCount; j += 1) {
+      if (Math.random() < 0.45) {
+        fx.particles.push({
+          x: reelsRect.left + Math.random() * reelsRect.width,
+          y: reelsRect.bottom - Math.random() * 10,
+          vx: (Math.random() - 0.5) * (isMobile ? 2.5 : 4.5),
+          vy: -3.5 - Math.random() * (isMobile ? 3.5 : 6),
+          life: isMobile ? 18 + Math.random() * 15 : 28 + Math.random() * 25,
+          maxLife: isMobile ? 33 : 53,
+          size: isMobile ? 1.5 + Math.random() * 2.5 : 2 + Math.random() * 4.5,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          shape: "spark",
+          gravity: -0.06 - Math.random() * 0.04, // float upwards (negative gravity)
+          spin: Math.random() * 4
+        });
+      }
+    }
+  }
+  
   const newSparks = [];
   
   for (let i = fx.particles.length - 1; i >= 0; i -= 1) {
     const p = fx.particles[i];
+    
+    // 0. Laser sweep update & rendering
+    if (p.shape === "laser") {
+      p.life -= 1;
+      p.y += p.vy;
+      if (p.life <= 0) {
+        fx.particles.splice(i, 1);
+        continue;
+      }
+      
+      const alpha = Math.max(0, p.life / p.maxLife);
+      fx.ctx.save();
+      const reelsRect = els.reels.getBoundingClientRect();
+      const x1 = reelsRect.left;
+      const x2 = reelsRect.right;
+      
+      if (!isMobile) {
+        fx.ctx.shadowColor = p.color;
+        fx.ctx.shadowBlur = 18;
+      }
+      
+      const gradHeight = isMobile ? 10 : 20;
+      const grad = fx.ctx.createLinearGradient(0, p.y - gradHeight, 0, p.y + gradHeight);
+      grad.addColorStop(0, "rgba(255,255,255,0)");
+      grad.addColorStop(0.5, p.color);
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      
+      fx.ctx.fillStyle = grad;
+      fx.ctx.globalAlpha = alpha * 0.75;
+      fx.ctx.fillRect(x1, p.y - gradHeight, x2 - x1, gradHeight * 2);
+      
+      fx.ctx.fillStyle = "#ffffff";
+      fx.ctx.globalAlpha = alpha * 0.95;
+      fx.ctx.shadowBlur = 0;
+      fx.ctx.fillRect(x1, p.y - 1.5, x2 - x1, 3);
+      
+      fx.ctx.restore();
+      continue;
+    }
     
     // 1. Shockwave update & rendering
     if (p.shape === "shockwave") {
@@ -1288,6 +1427,7 @@ async function spin() {
   playButtonSound();
   const btnRect = els.spinButton.getBoundingClientRect();
   spawnShockwave(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
+  spawnLaserSweep();
   const bet = currentBet();
   const lineCount = currentLineCount();
   const lineCost = bet * lineCount;
