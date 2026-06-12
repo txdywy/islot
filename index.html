@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="iSlot is a free-play cinematic slot machine game with fantasy coins, themes, jackpots, and explosive effects."
+    />
+    <title>iSlot | 爆燃奇境老虎机</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="assets/islot-concept.png" as="image" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <canvas id="fxCanvas" aria-hidden="true"></canvas>
+    <div class="aurora" aria-hidden="true"></div>
+    <div class="snow-layer" aria-hidden="true"></div>
+    <main class="game-shell" id="gameShell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="iSlot home">
+          <span class="brand-mark">iS</span>
+          <span>
+            <strong>iSlot</strong>
+            <small>纯娱乐金币场</small>
+          </span>
+        </a>
+        <nav class="mode-tabs" aria-label="Theme shortcuts">
+          <button class="tab is-active" data-theme-shortcut="vegas">霓虹城</button>
+          <button class="tab" data-theme-shortcut="egypt">黄金埃及</button>
+          <button class="tab" data-theme-shortcut="maya">玛雅神庙</button>
+          <button class="tab" data-theme-shortcut="arctic">极光冰原</button>
+          <button class="tab" data-theme-shortcut="dragon">龙焰工坊</button>
+        </nav>
+        <div class="sound-strip">
+          <button class="icon-button" id="muteButton" aria-label="Toggle sound">♪</button>
+          <button class="icon-button" id="turboButton" aria-label="Toggle turbo mode">⚡</button>
+        </div>
+      </header>
+
+      <section class="stage-grid">
+        <aside class="theme-rail" aria-label="Themes">
+          <div class="rail-heading">
+            <span>主题关卡</span>
+            <strong id="themeCount">5</strong>
+          </div>
+          <div class="theme-list" id="themeList"></div>
+        </aside>
+
+        <section class="machine-wrap" aria-label="Slot machine">
+          <div class="jackpot-crown">
+            <span>Grand Jackpot</span>
+            <strong id="jackpotValue">888,888</strong>
+          </div>
+
+          <div class="machine" id="machine">
+            <div class="machine-lights" aria-hidden="true"></div>
+            <div class="reel-window">
+              <div class="payline-line line-mid"></div>
+              <div class="payline-line line-zig"></div>
+              <div class="reels" id="reels"></div>
+            </div>
+            <div class="win-banner" id="winBanner" role="status" aria-live="polite">
+              <span id="winTitle">准备起飞</span>
+              <strong id="winAmount">SPIN TO WIN</strong>
+            </div>
+          </div>
+
+          <div class="control-deck">
+            <div class="meter-card balance-card">
+              <span>金币余额</span>
+              <strong id="balanceValue">50,000</strong>
+            </div>
+            <div class="bet-control">
+              <button class="round-button" id="betDown" aria-label="Decrease bet">−</button>
+              <div>
+                <span>每线下注</span>
+                <strong id="betValue">100</strong>
+              </div>
+              <button class="round-button" id="betUp" aria-label="Increase bet">+</button>
+            </div>
+            <button class="spin-button" id="spinButton">
+              <span>SPIN</span>
+              <small id="spinHint">5 条线 · 爆奖模式</small>
+            </button>
+            <button class="ghost-button" id="autoButton">自动旋转</button>
+            <button class="ghost-button gold" id="addCoinsButton">爽充金币</button>
+          </div>
+        </section>
+
+        <aside class="mission-panel">
+          <div class="panel-block concept-card">
+            <img src="assets/islot-concept.png" alt="iSlot visual concept artwork" />
+            <div>
+              <span>今日氛围</span>
+              <strong id="currentThemeName">霓虹城</strong>
+            </div>
+          </div>
+          <div class="panel-block">
+            <span>免费旋转</span>
+            <strong id="freeSpinsValue">0</strong>
+            <p>3 个 Scatter 触发暴走免费局，连中会叠加主题特效。</p>
+          </div>
+          <div class="panel-block">
+            <span>连胜热度</span>
+            <div class="heatbar"><i id="heatFill"></i></div>
+            <p id="heatText">等待第一把爆燃。</p>
+          </div>
+          <div class="panel-block paytable">
+            <span>高光赔付</span>
+            <ul id="paytableList"></ul>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+    <script type="module" src="src/game.js"></script>
+  </body>
+</html>
