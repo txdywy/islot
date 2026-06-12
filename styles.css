@@ -775,7 +775,8 @@ button {
 
 .symbol.is-hit {
   border-color: var(--gold);
-  animation: hitPulse 850ms ease-in-out infinite;
+  animation: hitPop 500ms cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  will-change: transform;
 }
 
 .symbol.is-final {
@@ -1478,6 +1479,24 @@ button {
   }
 }
 
+@keyframes hitPop {
+  0% {
+    transform: scale(1);
+  }
+  32% {
+    transform: scale(1.13);
+  }
+  62% {
+    transform: scale(0.94);
+  }
+  86% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 @keyframes bannerBlast {
   0% {
     transform: scale(0.98);
@@ -1879,7 +1898,7 @@ button {
 
   /* 20. Simplify hitPulse (box-shadow animation on 15 symbols = 15 repaints/frame) */
   .symbol.is-hit {
-    animation: none !important;
+    animation: hitPop 500ms cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards !important;
     border-color: var(--gold) !important;
     box-shadow: 0 0 12px rgba(255, 214, 107, 0.5) !important;
   }

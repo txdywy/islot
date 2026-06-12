@@ -776,7 +776,7 @@ async function animateReels(finalBoard, theme) {
   els.machine.classList.remove("is-reel-spinning");
 }
 
-function spawnBurst(kind, amount = 120) {
+function spawnBurst(kind, amount = 120, customX = null, customY = null) {
   const isMobile = window.innerWidth < 768;
   const count = isMobile ? Math.min(amount, 40) : amount;
   const maxCap = isMobile ? 120 : 420;
@@ -789,14 +789,14 @@ function spawnBurst(kind, amount = 120) {
     inferno: ["#ff5a1f", "#ffd05a", "#fff1b0", "#b5002f"],
   }[kind] || ["#fff", theme.accent, theme.second];
 
-  const originX = fx.width * (0.42 + Math.random() * 0.18);
-  const originY = fx.height * (0.28 + Math.random() * 0.28);
+  const originX = customX !== null ? customX : fx.width * (0.42 + Math.random() * 0.18);
+  const originY = customY !== null ? customY : fx.height * (0.28 + Math.random() * 0.28);
   for (let i = 0; i < count; i += 1) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1.5 + Math.random() * (kind === "blizzard" ? 5 : 12);
     fx.particles.push({
-      x: originX + (Math.random() - 0.5) * 180,
-      y: originY + (Math.random() - 0.5) * 120,
+      x: originX + (customX !== null ? 0 : (Math.random() - 0.5) * 180),
+      y: originY + (customY !== null ? 0 : (Math.random() - 0.5) * 120),
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - Math.random() * 3,
       life: isMobile ? 30 + Math.random() * 40 : 50 + Math.random() * 90,
@@ -893,6 +893,80 @@ function unlockTheme(theme) {
   renderShell();
 }
 
+function paylineCanvasPoints(reels, line, count = 5) {
+  const points = [];
+  for (let col = 0; col < count; col += 1) {
+    const symbol = reels[col]?.querySelectorAll(".symbol")?.[line[col]];
+    if (symbol) {
+      const rect = symbol.getBoundingClientRect();
+      points.push({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    }
+  }
+  return points;
+}
+
+function spawnPaylineTracers(wins) {
+  const reels = [...els.reels.querySelectorAll(".reel")];
+  const theme = currentTheme();
+  const isMobile = window.innerWidth < 768;
+  
+  wins.forEach((win, index) => {
+    if (win.lineIndex < 0) return; // Skip scatter
+    const line = PAYLINES[win.lineIndex];
+    const path = paylineCanvasPoints(reels, line, win.count);
+    if (path.length < 2) return;
+    
+    const colors = [theme.accent, theme.second || theme.accent, "#ffffff"];
+    
+    // Comet 1
+    spawnTracer(path, colors[index % colors.length], isMobile ? 8 : 12);
+    
+    // Comet 2 (delayed by 180ms)
+    setTimeout(() => {
+      if (state.spinning) return; // Only spawn if a new spin hasn't started
+      spawnTracer(path, colors[(index + 1) % colors.length], isMobile ? 8 : 12);
+    }, 180);
+  });
+}
+
+function spawnTracer(path, color, speed) {
+  fx.particles.push({
+    shape: "tracer",
+    path: path,
+    targetPointIndex: 1,
+    x: path[0].x,
+    y: path[0].y,
+    vx: 0,
+    vy: 0,
+    life: 999, // Tracers live until they complete their path
+    maxLife: 999,
+    size: window.innerWidth < 768 ? 4 : 7,
+    color: color,
+    speed: speed,
+    gravity: 0,
+    spin: 0
+  });
+  startFxLoop();
+}
+
+function spawnShockwave(x, y) {
+  const theme = currentTheme();
+  fx.particles.push({
+    shape: "shockwave",
+    x: x,
+    y: y,
+    vx: 0,
+    vy: 0,
+    life: window.innerWidth < 768 ? 20 : 28,
+    maxLife: window.innerWidth < 768 ? 20 : 28,
+    size: 0,
+    color: theme.accent,
+    gravity: 0,
+    spin: 0
+  });
+  startFxLoop();
+}
+
 let fxLoopRunning = false;
 
 function startFxLoop() {
@@ -910,8 +984,98 @@ function fxLoop() {
   
   const isMobile = window.innerWidth < 768;
   fx.ctx.clearRect(0, 0, fx.width, fx.height);
+  const newSparks = [];
+  
   for (let i = fx.particles.length - 1; i >= 0; i -= 1) {
     const p = fx.particles[i];
+    
+    // 1. Shockwave update & rendering
+    if (p.shape === "shockwave") {
+      p.life -= 1;
+      if (p.life <= 0) {
+        fx.particles.splice(i, 1);
+        continue;
+      }
+      const alpha = Math.max(0, p.life / p.maxLife);
+      fx.ctx.save();
+      fx.ctx.globalAlpha = alpha * 0.55;
+      fx.ctx.translate(p.x, p.y);
+      const radius = (1 - alpha) * (isMobile ? 140 : 280);
+      
+      // Ring 1
+      fx.ctx.beginPath();
+      fx.ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      fx.ctx.strokeStyle = p.color;
+      fx.ctx.lineWidth = alpha * (isMobile ? 2 : 4);
+      fx.ctx.stroke();
+      
+      // Ring 2
+      fx.ctx.beginPath();
+      fx.ctx.arc(0, 0, radius * 0.82, 0, Math.PI * 2);
+      fx.ctx.strokeStyle = currentTheme().second || p.color;
+      fx.ctx.lineWidth = alpha * (isMobile ? 1 : 2);
+      fx.ctx.stroke();
+      
+      fx.ctx.restore();
+      continue;
+    }
+    
+    // 2. Tracer comet update & rendering
+    if (p.shape === "tracer") {
+      const target = p.path[p.targetPointIndex];
+      if (!target) {
+        fx.particles.splice(i, 1);
+        continue;
+      }
+      const dx = target.x - p.x;
+      const dy = target.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= p.speed) {
+        p.x = target.x;
+        p.y = target.y;
+        p.targetPointIndex += 1;
+        if (p.targetPointIndex >= p.path.length) {
+          fx.particles.splice(i, 1);
+          continue;
+        }
+      } else {
+        p.x += (dx / dist) * p.speed;
+        p.y += (dy / dist) * p.speed;
+      }
+      
+      // Spawn trail spark with low probability to save performance
+      const sparkProb = isMobile ? 0.35 : 0.65;
+      if (Math.random() < sparkProb) {
+        newSparks.push({
+          x: p.x,
+          y: p.y,
+          vx: (Math.random() - 0.5) * 1.5,
+          vy: (Math.random() - 0.5) * 1.5,
+          life: isMobile ? 8 + Math.random() * 8 : 12 + Math.random() * 12,
+          maxLife: isMobile ? 16 : 24,
+          size: isMobile ? 1.5 + Math.random() * 1.5 : 2 + Math.random() * 2.5,
+          color: p.color,
+          shape: "spark",
+          gravity: 0.02,
+          spin: Math.random() * 4
+        });
+      }
+      
+      // Render tracer head
+      fx.ctx.save();
+      fx.ctx.fillStyle = p.color;
+      if (!isMobile) {
+        fx.ctx.shadowColor = p.color;
+        fx.ctx.shadowBlur = 10;
+      }
+      fx.ctx.beginPath();
+      fx.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      fx.ctx.fill();
+      fx.ctx.restore();
+      continue;
+    }
+    
+    // 3. Normal particles update & rendering
     p.life -= 1;
     p.vy += p.gravity;
     p.x += p.vx;
@@ -937,6 +1101,15 @@ function fxLoop() {
     fx.ctx.restore();
     if (p.life <= 0) fx.particles.splice(i, 1);
   }
+  
+  if (newSparks.length > 0) {
+    fx.particles.push(...newSparks);
+    const maxCap = isMobile ? 120 : 420;
+    if (fx.particles.length > maxCap) {
+      fx.particles.splice(0, fx.particles.length - maxCap);
+    }
+  }
+  
   requestAnimationFrame(fxLoop);
 }
 
@@ -1046,20 +1219,41 @@ function highlightWins(board, wins) {
   const overlayRect = els.paylineOverlay.getBoundingClientRect();
   appendPaylineDefs();
 
+  const burstSymbols = new Set();
+  const theme = currentTheme();
+  const isMobile = window.innerWidth < 768;
+
   for (const win of wins) {
     if (win.lineIndex < 0) {
-      document.querySelectorAll('[data-symbol="scatter"]').forEach((node) => node.classList.add("is-hit"));
+      document.querySelectorAll('[data-symbol="scatter"]').forEach((node) => {
+        node.classList.add("is-hit");
+        if (!burstSymbols.has(node)) {
+          burstSymbols.add(node);
+          const rect = node.getBoundingClientRect();
+          spawnBurst(theme.effect, isMobile ? 8 : 16, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }
+      });
       continue;
     }
     const line = PAYLINES[win.lineIndex];
     for (let col = 0; col < win.count; col += 1) {
       const symbol = reels[col]?.querySelectorAll(".symbol")?.[line[col]];
-      symbol?.classList.add("is-hit");
+      if (symbol) {
+        symbol.classList.add("is-hit");
+        if (!burstSymbols.has(symbol)) {
+          burstSymbols.add(symbol);
+          const rect = symbol.getBoundingClientRect();
+          spawnBurst(theme.effect, isMobile ? 8 : 16, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }
+      }
     }
     const points = paylinePoints(reels, overlayRect, line, win.count);
     if (points.length >= 3) drawPayline(points, win.lineIndex);
   }
-  if (wins.length > 0) els.paylineOverlay.classList.add("is-active");
+  if (wins.length > 0) {
+    els.paylineOverlay.classList.add("is-active");
+    spawnPaylineTracers(wins);
+  }
 }
 
 function drawPayline(points, lineIndex, mode = "win") {
@@ -1092,6 +1286,8 @@ function drawPayline(points, lineIndex, mode = "win") {
 async function spin() {
   if (state.spinning) return;
   playButtonSound();
+  const btnRect = els.spinButton.getBoundingClientRect();
+  spawnShockwave(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
   const bet = currentBet();
   const lineCount = currentLineCount();
   const lineCost = bet * lineCount;
